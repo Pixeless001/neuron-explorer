@@ -578,15 +578,10 @@ class Runtime:
         enc = self.tok.apply_chat_template(messages, add_generation_prompt=True, enable_thinking=False, tokenize=True)
         return list(enc["input_ids"] if hasattr(enc, "keys") else enc)
 
-    def steer_stream(self, layer, n, rows_messages, dose, mode, max_new=200, cancel=None):
-        """Greedy-decodes three conversations in one batch: row 0 pushed up, row 1 unsteered, row 2 pushed down.
-        rows_messages holds each row's own message list (the rows can differ in length; they are left-padded).
-        Yields (row, text_delta), then (None, None)."""
-        yield from self.steer_multi([(layer, n, dose, mode)], rows_messages, max_new, cancel)
-
     def steer_multi(self, pushes, rows_messages, max_new=200, cancel=None):
-        """steer_stream for any number of neurons at once: pushes = [(layer, n, dose, mode)], all applied together.
-        Each is reversed in row 2 the same way a single neuron is (add: -dose; mul: x -dose)."""
+        """Greedy-decodes three conversations in one batch with pushes = [(layer, n, dose, mode)] applied together:
+        row 0 pushed, row 1 unsteered, row 2 each push reversed (add: -dose; mul: x -dose). rows_messages holds each
+        row's own message list (left-padded to one length). Yields (row, text_delta), then (None, None)."""
         self.ensure_loaded()
         with self.lock:
             if cancel is not None and cancel.is_set():

@@ -201,6 +201,26 @@ async def set_name(req: Request):
     return {"ok": True}
 
 
+VARIANTS = os.path.join(CACHE, "variants.json")  # saved steer setups, per model like names
+
+
+@app.get("/api/variants")
+def get_variants():
+    return json.load(open(VARIANTS, encoding="utf-8")) if os.path.exists(VARIANTS) else []
+
+
+@app.post("/api/variants")
+async def set_variants(req: Request):
+    """Replaces the whole list: [{id, name, mode, neurons: [{layer, n, dose}], prompt}]."""
+    v = await req.json()
+    if not isinstance(v, list) or not all(isinstance(x, dict) and isinstance(x.get("neurons"), list) for x in v):
+        return JSONResponse({"error": "expected a list of variants"}, status_code=400)
+    with open(VARIANTS + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(v, f, ensure_ascii=False, indent=1)
+    os.replace(VARIANTS + ".tmp", VARIANTS)
+    return {"ok": True}
+
+
 @app.get("/api/embeddings")
 def embeddings(layer: int):
     d = load_layer(layer)
@@ -261,8 +281,10 @@ async def steer(req: Request):
                 for turn in b.get("history", []):
                     msgs += [{"role": "user", "content": turn["user"]}, {"role": "assistant", "content": turn["replies"][r]}]
                 rows.append(msgs + [{"role": "user", "content": b["prompt"]}])
-            for row, delta in rt.steer_stream(int(b["layer"]), int(b["n"]), rows, float(b["dose"]),
-                                              b.get("mode", "add"), int(b.get("max_new", 300)), cancel):
+            # neurons: [{layer, n, dose}] steered together (or one neuron as layer, n, dose); row 2 reverses each
+            mode = b.get("mode", "add")
+            pushes = [(int(x["layer"]), int(x["n"]), float(x["dose"]), mode) for x in b.get("neurons") or [b]]
+            for row, delta in rt.steer_multi(pushes, rows, int(b.get("max_new", 300)), cancel):
                 loop.call_soon_threadsafe(q.put_nowait, {"row": row, "t": delta})
         except Exception as e:  # surfaced in the UI next to the chat
             loop.call_soon_threadsafe(q.put_nowait, {"row": None, "error": repr(e)})

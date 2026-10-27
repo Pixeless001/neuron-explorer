@@ -18,6 +18,7 @@ explorer/cache/agent/
 *.zip
 explorer/names.json
 explorer/cache*/names.json
+explorer/cache*/variants.json
 explorer/*.local.md
 
 # per-machine pod settings
