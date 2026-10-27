@@ -5,9 +5,9 @@ pre-MLP norm weight of layer j. Neuron A's downstream links in layer j are colum
 B's upstream links in layer i are row B of P, |P| z-scored over A. Each neuron keeps its k strongest links per side
 across all layers, with sign(P).
 
-    uv run python explorer/build_connections.py            # CUDA, about 5 min on a 4090
+    uv run python explorer/build_connections.py            # CUDA, MPS or CPU; about 5 min for the 4B on a 4090
 
-Writes explorer/cache/connections.npz: {down,up}_layer [L, N, k] int8, {down,up}_n int16, {down,up}_z float16,
+Writes <cache>/connections.npz: {down,up}_layer [L, N, k] int8, {down,up}_n int16, {down,up}_z float16,
 {down,up}_sign int8.
 """
 import argparse
@@ -20,12 +20,15 @@ import torch
 from huggingface_hub import snapshot_download
 from safetensors import safe_open
 
+from runtime import CACHE
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
 ap.add_argument("--k", type=int, default=24)
-ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "connections.npz"))
+ap.add_argument("--out", default=os.path.join(CACHE, "connections.npz"))
 a = ap.parse_args()
-dev = "cuda" if torch.cuda.is_available() else "mps"
+dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+DT = torch.float32 if dev == "cpu" else torch.bfloat16  # CPUs without AMX run bf16 matmuls slowly
 
 root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
 index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
@@ -35,14 +38,14 @@ L, N, K = cfg["num_hidden_layers"], cfg["intermediate_size"], a.k
 
 def tensor(name):
     with safe_open(os.path.join(root, index[name]), "pt") as f:
-        return f.get_tensor(name).to(dev, torch.bfloat16)
+        return f.get_tensor(name).to(dev, DT)
 
 
 pre = "model.language_model.layers.{}."
 down = [tensor(pre.format(l) + "mlp.down_proj.weight") for l in range(L)]
 gate = [tensor(pre.format(l) + "mlp.gate_proj.weight") for l in range(L)]
 up = [tensor(pre.format(l) + "mlp.up_proj.weight") for l in range(L)]
-norm = [(1.0 + tensor(pre.format(l) + "post_attention_layernorm.weight").float()).to(torch.bfloat16) for l in range(L)]
+norm = [(1.0 + tensor(pre.format(l) + "post_attention_layernorm.weight").float()).to(DT) for l in range(L)]
 
 # running top-k per neuron and side: score, source layer, source neuron, sign
 best = {s: (torch.full((L, N, K), -1e9, device=dev), torch.zeros((L, N, K), dtype=torch.int16, device=dev),
@@ -86,5 +89,6 @@ for side, (bz, bl, bn, bs) in best.items():
     out[f"{side}_layer"] = bl.cpu().numpy().astype(np.int8)
     out[f"{side}_n"] = bn.cpu().numpy()
     out[f"{side}_sign"] = bs.cpu().numpy()
+os.makedirs(os.path.dirname(a.out), exist_ok=True)
 np.savez_compressed(a.out, **out, k=K)
 print("->", a.out, f"{os.path.getsize(a.out) / 1e6:.0f} MB")
