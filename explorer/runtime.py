@@ -5,18 +5,25 @@ The hook sits on the input of a layer's down_proj, where the neuron activations 
 multiply, and reading are all exact. Add doses are in units of the median residual norm leaving the layer, the same
 unit as the sweep's `--dose-unit rel`.
 """
+import glob
 import json
 import os
 import sqlite3
 import threading
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
-from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
-
 MODEL = os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B")
+# a model already downloaded loads offline: no Hub round-trip at startup, no network needed (read at import, so this
+# runs before transformers is first imported)
+_hub = os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface"), "hub")
+if glob.glob(os.path.join(_hub, "models--" + MODEL.replace("/", "--"), "snapshots", "*", "config.json")):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
+from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration  # noqa: E402
+from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm  # noqa: E402
+
 STATS_TAG = "q35-" + MODEL.rsplit("-", 1)[-1].lower()  # stats file prefix: q35-0.8b, q35-4b
 NO_MODEL = bool(os.environ.get("EXPLORER_NO_MODEL"))  # cache-only: never download or load weights
 REFERENCE_TEXT = (
@@ -80,6 +87,8 @@ class Runtime:
             dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
             self.tok = AutoTokenizer.from_pretrained(MODEL)
             dtype = torch.float32 if dev == "cpu" else torch.bfloat16  # CPUs without AMX run bf16 matmuls slowly
+            if dev == "cpu":  # decoding is memory-bound: on a 2P+8E laptop 6 threads beat all 10 by ~20%
+                torch.set_num_threads(int(os.environ.get("EXPLORER_THREADS", 6)))
             m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=dtype).to(dev).eval()
             self.dev, self.model, self.lm = dev, m, m.model.language_model
             for i, layer in enumerate(self.lm.layers):
