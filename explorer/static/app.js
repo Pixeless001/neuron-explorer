@@ -1,4 +1,4 @@
-import { createMap } from "./map3d.js?v=80";
+import { createMap } from "./map3d.js?v=82";
 import { createScatter } from "./scatter.js?v=39";
 
 const $ = s => document.querySelector(s);

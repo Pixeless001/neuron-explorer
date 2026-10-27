@@ -63,6 +63,9 @@ export function createMap(canvas, labelsDiv, arch, cb) {
   const home = { target: new THREE.Vector3((L - 1) * GAP / 2, SHEET_Y0 + SHEET / 2 - 0.4, 0), dir: new THREE.Vector3(0.62, 0.4, 1).normalize() };
   camera.position.copy(home.target).addScaledVector(home.dir, homeDist);
   const controls = new OrbitControls(camera, canvas);
+  // the wheel zooms, so the middle button pans like the right one (a middle click moves the focus: see pointerup)
+  const MOUSE_ORBIT = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+  controls.mouseButtons = MOUSE_ORBIT;
   controls.target.copy(home.target);
   controls.enableDamping = false;
   controls.zoomToCursor = true;
@@ -430,9 +433,16 @@ export function createMap(canvas, labelsDiv, arch, cb) {
   });
   canvas.addEventListener("pointerleave", () => { hovered = null; refreshHighlights(); if (headHover) { headHover = null; paintHeads(); render(); } cb.onHover(null); });
   canvas.addEventListener("pointerdown", ev => { downAt = [ev.clientX, ev.clientY]; });
+  canvas.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });  // no browser autoscroll
   canvas.addEventListener("pointerup", ev => {
     if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
     const p = pick(ev);
+    if (ev.button === 1) {  // middle click: move the focus there (neuron, or a layer's sheet), keeping angle and zoom
+      if (!p) return;
+      flyTo(p.type === "neuron" ? neuronPos(p.layer, p.n) : new THREE.Vector3(layerX(p.layer) + MLP_DX, SHEET_Y0 + SHEET / 2, 0), curDist());
+      cb.onPickLayer && cb.onPickLayer(p.layer);  // and that layer becomes the current one
+      return;
+    }
     if (p && p.type === "neuron") cb.onPick(p.layer, p.n);
     else if (p && p.type === "head") cb.onPickHead && cb.onPickHead(p.layer, p.head);
     else if (p && p.type === "block") cb.onPickLayer && cb.onPickLayer(p.layer);
@@ -453,14 +463,14 @@ export function createMap(canvas, labelsDiv, arch, cb) {
     const dist = (SHEET / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.12;
     controls.target.copy(c); camera.position.copy(c).add(new THREE.Vector3(-dist, 0, 0));
     controls.enableRotate = false;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
     controls.update(); render(); cb.onLayerMode && cb.onLayerMode(l);
   }
   function exitLayer() {
     if (layerMode === null) return;
     layerMode = null;
     controls.enableRotate = true;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.mouseButtons = MOUSE_ORBIT;
     camera.position.copy(saved.pos); controls.target.copy(saved.tgt);
     controls.update(); render(); cb.onLayerMode && cb.onLayerMode(null);
   }
