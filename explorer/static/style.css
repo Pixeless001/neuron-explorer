@@ -443,6 +443,8 @@ body.dragging { cursor: col-resize; user-select: none; }
 .pane-tabs button[data-pane]:hover { color: var(--ink); background: var(--raise); }
 .pane-tabs button[data-pane].on { color: var(--ink); background: var(--surface-2); }
 .pane-title { font-weight: 600; font-size: 13px; padding: 5px 6px; }
+#a-ctx { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+#a-ctx.high { color: var(--up); }
 .pane-tabs #a-agent { margin-left: auto; font-size: 12px; padding: 3px 6px; }
 .pane-tabs #a-past, .pane-tabs #a-new { font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); }
 .pane-tabs #a-past:hover, .pane-tabs #a-new:hover { color: var(--ink); background: var(--raise); }
@@ -465,6 +467,10 @@ body.dragging { cursor: col-resize; user-select: none; }
 :is(.md, .a-md) pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; margin: .4em 0 .7em;
   white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.45 var(--mono); }
 :is(.md, .a-md) pre code { background: none; padding: 0; font: inherit; }
+:is(.md, .a-md) pre { position: relative; }
+:is(.md, .a-md) pre > .copy { position: absolute; top: 4px; right: 4px; font-size: 11px; color: var(--dim); background: var(--panel);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 6px; opacity: .6; cursor: pointer; }
+:is(.md, .a-md) pre:hover > .copy, :is(.md, .a-md) pre > .copy:focus-visible { opacity: 1; color: var(--ink); }
 :is(.md, .a-md) blockquote { margin: .4em 0 .6em; padding-left: 10px; border-left: 2px solid var(--faint); color: var(--dim); }
 :is(.md, .a-md) hr { border: 0; border-top: 1px solid var(--border); margin: .8em 0; }
 .c-bar .toggles { margin-left: 4px; }

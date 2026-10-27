@@ -1,7 +1,7 @@
 // the chat page (/chat): the steering chat and saved variants on the left, Claude on the right. Live-linked to the
 // explorer page through `bus`: the neuron open there drives the steering stack and the lens shown here, and what
 // Claude does to the screen (camera, selections, highlights, view) is applied there.
-import { $, api, esc, bus, md, tokPrefs, tokText } from "./common.js?v=3";
+import { $, api, esc, bus, md, tokPrefs, tokText } from "./common.js?v=4";
 
 const index = await api("/api/index");
 const arch = index.arch;
@@ -364,7 +364,7 @@ $("#a-actions").addEventListener("click", e => {
 });
 function resetAgent() {
   closeEvents(); if (agent.busy) finishTurn();
-  agent.chat = null; $("#a-thread").innerHTML = EMPTY;
+  agent.chat = null; $("#a-thread").innerHTML = EMPTY; setCtx(null);
   let pref = "claude"; try { pref = localStorage.getItem("explorer.agentKind") || "claude"; } catch {}
   setAgentKind(pref);
   saveAgent();
@@ -428,6 +428,16 @@ function replyBox() {
 }
 const putInBox = el => { const box = replyBox(), busy = box.querySelector(".a-busy"); busy ? box.insertBefore(el, busy) : box.append(el); };
 function setBusy(b) { agent.busy = b; setSendMode(b); }
+// how full Claude's context is (codex chats send none)
+const fmtTok = n => n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`;
+function setCtx(c) {
+  const el = $("#a-ctx"); el.hidden = !c?.used;
+  if (el.hidden) return;
+  const pct = c.window ? c.used / c.window * 100 : null;
+  el.textContent = pct == null ? `${fmtTok(c.used)} tokens` : `${pct < 1 ? pct.toFixed(1) : Math.round(pct)}% context`;
+  el.title = `context: ${c.used.toLocaleString()}${c.window ? ` of ${c.window.toLocaleString()}` : ""} tokens`;
+  el.classList.toggle("high", pct >= 80);
+}
 function onAgentEvent(e) {
   const th = $("#a-thread"), stick = th.scrollHeight - th.scrollTop - th.clientHeight < 80;
   if (e.t === "state") {
@@ -435,9 +445,11 @@ function onAgentEvent(e) {
     if (agent.box && e.busy) { agent.box.innerHTML = ""; agent.seg = null; agent.reply = ""; }
     if (e.busy) { setBusy(true); replyBox(); if (!agent.box.querySelector(".a-busy")) { const d = document.createElement("div"); d.className = "a-busy"; agent.box.append(d); } }
     else if (agent.busy && !agent.sending) finishTurn();  // a message still on its way makes the server busy in a moment
+    setCtx(e.ctx);
     return;
   }
   if (e.t === "ping" || e.t === "sent") return;
+  if (e.t === "ctx") return setCtx(e);
   if (e.t === "ui") return onUi(e);
   if (e.t === "done") return finishTurn();
   if (!agent.busy) { setBusy(true); clearTurnControls(); }  // a turn Claude started itself (background work finished)

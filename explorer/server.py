@@ -1311,6 +1311,30 @@ def _refusal(m):
     return {"id": msg.get("id"), "text": f"stopped by the {cat} safety classifier" if cat else "stopped by a safety classifier"}
 
 
+def _ctx_used(m):
+    """Tokens in the context after an assistant message: everything the API call read plus what it wrote."""
+    u = (m.get("message") or {}).get("usage") or {} if m.get("type") == "assistant" else {}
+    return sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"))
+
+
+def _ctx_state(cid):
+    """{used, window} for a claude chat, used read from its session's last main-thread reply when not seen live."""
+    c, used = _chats.get(cid) or {}, None
+    if c.get("ctx") is None and (path := _session_file(cid)):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    m = json.loads(line)
+                except ValueError:
+                    continue
+                if not m.get("isSidechain"):
+                    used = _ctx_used(m) or used
+        if c:
+            c["ctx"] = used
+    meta = _meta()  # a chat before its first reply ends takes the window another chat reported
+    return {"used": c.get("ctx", used), "window": meta.get(cid, {}).get("window") or max((m.get("window") or 0 for m in meta.values()), default=0) or None}
+
+
 def _shown_text(t):
     """What the person typed, without the note about what they had open."""
     import re
@@ -1540,12 +1564,18 @@ async def _pump(c, proc):
             if (r := _refusal(m)) and r["id"] not in c.setdefault("refused", set()):
                 c["refused"].add(r["id"])
                 _emit(c, {"t": "error", "error": r["text"]})
+            if used := _ctx_used(m):
+                c["ctx"] = used
+                _emit(c, {"t": "ctx", **_ctx_state(c["session"])})
         elif m.get("type") == "user":
             for ev in _tool_results(m):
                 _emit(c, ev)
         elif m.get("type") == "result":
             if m.get("is_error") and m.get("subtype") != "error_during_execution":
                 _emit(c, {"t": "error", "error": str(m.get("result"))[:600]})
+            if win := max((u.get("contextWindow") or 0 for u in (m.get("modelUsage") or {}).values()), default=0):
+                _meta_set(c["session"], window=win)
+                _emit(c, {"t": "ctx", **_ctx_state(c["session"])})
             c["busy"] = False
             _emit(c, {"t": "done", "cost": m.get("total_cost_usd")})
             c["turn"] = []
@@ -1803,7 +1833,8 @@ async def agent_events(chat: str):
 
     async def gen():
         try:
-            yield json.dumps({"t": "state", "busy": c["busy"], "running": bool(c.get("proc") and c["proc"].returncode is None)}) + "\n"
+            yield json.dumps({"t": "state", "busy": c["busy"], "running": bool(c.get("proc") and c["proc"].returncode is None),
+                              **({"ctx": _ctx_state(chat)} if c["agent"] == "claude" else {})}) + "\n"
             for ev in list(c["turn"]):
                 yield json.dumps(ev) + "\n"
             while True:

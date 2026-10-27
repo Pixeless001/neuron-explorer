@@ -68,13 +68,20 @@ function inline(t, refs) {
   if (refs) s = s.replace(/\bL(\d{1,2})[ \/]N(\d{1,4})\b/g, (m, l, n) => `<a class="nref" data-l="${l}" data-n="${n}">${m}</a>`);
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
 }
+const pre = lines => `<pre><button type="button" class="copy" title="copy">copy</button><code>${esc(lines.join("\n"))}</code></pre>`;
+document.addEventListener("click", async e => {
+  const b = e.target.closest("pre > button.copy"); if (!b) return;
+  try { await navigator.clipboard.writeText(b.nextElementSibling.textContent); b.textContent = "copied"; }
+  catch { b.textContent = "failed"; }
+  setTimeout(() => { b.textContent = "copy"; }, 1200);
+});
 export function md(src, refs = true) {
   const out = [];
   let list = null, code = null, para = [];
   const flush = () => { if (para.length) { out.push(`<p>${para.map(l => inline(l, refs)).join("<br>")}</p>`); para = []; } };
   const endList = () => { if (list) { out.push(`</${list}>`); list = null; } };
   for (const line of src.split("\n")) {
-    if (code) { if (/^\s*```/.test(line)) { out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); code = null; } else code.push(line); continue; }
+    if (code) { if (/^\s*```/.test(line)) { out.push(pre(code)); code = null; } else code.push(line); continue; }
     if (/^\s*```/.test(line)) { flush(); endList(); code = []; continue; }
     const h = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/), ul = line.match(/^\s*[-*+]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/);
     if (ul || ol) {
@@ -91,7 +98,7 @@ export function md(src, refs = true) {
     else if (!line.trim()) flush();
     else para.push(line);
   }
-  if (code) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);  // a block still streaming
+  if (code) out.push(pre(code));  // a block still streaming
   flush(); endList();
   return out.join("");
 }
