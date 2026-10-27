@@ -1,20 +1,23 @@
-"""Seriated sheet layouts: places each layer's neurons on its 96x96 grid so that neurons with similar weights sit
+"""Seriated sheet layouts: places each layer's neurons on its sheet grid so that neurons with similar weights sit
 together. Embeds each neuron by its down_proj column ("writes": the direction it adds to the residual stream) or its
 gate and up rows ("reads"), cosine-normalised, PCA to 50 dims, UMAP to 2D, then snaps to the grid: sort by y into
-rows of 96, then by x within each row.
+rows of ceil(sqrt(N)), then by x within each row; the last row is partial when N is not a square.
 
     uv run python explorer/build_layout.py --kind writes
 
-Writes explorer/cache/layout_<kind>.npz: cell[L, N] (int16, row * 96 + col for neuron n of layer L).
+Writes <cache>/layout_<kind>.npz: cell[L, N] (int16, row * side + col for neuron n of layer L).
 """
 import argparse
 import json
+import math
 import os
 
 import numpy as np
 import umap
 from huggingface_hub import snapshot_download
 from safetensors import safe_open
+
+from runtime import CACHE
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
@@ -27,8 +30,7 @@ root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
 index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
 cfg = json.load(open(os.path.join(root, "config.json")))["text_config"]
 L, N = cfg["num_hidden_layers"], cfg["intermediate_size"]
-side = int(round(N ** 0.5))
-assert side * side == N
+side = math.ceil(math.sqrt(N))  # the map draws the same grid (map3d.js gridSide)
 
 
 def tensor(name):
@@ -49,12 +51,14 @@ for l in range(L):
     Z = U[:, : a.pca] * S[: a.pca]
     xy = umap.UMAP(n_neighbors=a.neighbors, min_dist=0.05, metric="cosine", random_state=0).fit_transform(Z)
     by_y = np.argsort(xy[:, 1], kind="stable")
-    for r in range(side):
+    for r in range(math.ceil(N / side)):
         band = by_y[r * side:(r + 1) * side]
         band = band[np.argsort(xy[band, 0], kind="stable")]
-        cells[l, band] = r * side + np.arange(side)
+        cells[l, band] = r * side + np.arange(len(band))
+    assert np.array_equal(np.sort(cells[l]), np.arange(N))  # every neuron gets its own cell
     print(f"L{l} done", flush=True)
 
-out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", f"layout_{a.kind}.npz")
+os.makedirs(CACHE, exist_ok=True)
+out = os.path.join(CACHE, f"layout_{a.kind}.npz")
 np.savez(out, cell=cells)
 print("->", out)
