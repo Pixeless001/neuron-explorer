@@ -48,7 +48,8 @@ const DOSE = { add: { min: -2, max: 2, step: 0.05, def: 0.8 }, mul: { min: 0, ma
 // auto: the stack still just follows the open neuron; adding a neuron or loading a variant takes it over
 // the stack, its runs and the prompt are saved per model on the server (chat_session.json) and restored here
 const session = await api("/api/session").catch(() => ({}));
-state.steer = { mode: "add", neurons: [], auto: true, compare: false, max: 600, ...session.steer, dir: "writes" };
+// Compare always starts off (it costs two extra replies per run); it lasts until the page reloads
+state.steer = { mode: "add", neurons: [], auto: true, max: 600, ...session.steer, compare: false, dir: "writes" };
 delete state.steer.show;  // sessions from before the Compare toggle
 let sessionSaved = JSON.stringify(session), sessionTimer;
 // debounced, skipped while a run streams (its end saves) and when nothing changed; the last 50 runs are kept
@@ -56,8 +57,8 @@ function saveSession() {
   clearTimeout(sessionTimer);
   sessionTimer = setTimeout(() => {
     if (running) return;
-    const { mode, neurons, auto, compare, max } = state.steer;
-    const body = JSON.stringify({ steer: { mode, neurons, auto, compare, max }, prompt: $("#c-input").value,
+    const { mode, neurons, auto, max } = state.steer;
+    const body = JSON.stringify({ steer: { mode, neurons, auto, max }, prompt: $("#c-input").value,
       thread: state.thread.slice(-50).map(({ user, replies, mode, neurons, cols, cut, max, error }) => ({ user, replies, mode, neurons, cols, cut, max, ...(error && { error }) })) });
     if (body === sessionSaved) return;
     sessionSaved = body;
