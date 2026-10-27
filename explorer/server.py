@@ -144,8 +144,19 @@ def swept(layer):
     return ranked_words(layer).keys()
 
 
+def read_json(path, default):
+    return json.load(open(path, encoding="utf-8")) if os.path.exists(path) else default
+
+
+def write_json(path, obj, **kw):
+    """Written whole to a temp file, then renamed over the old one: a crash never leaves half a file."""
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=1, **kw)
+    os.replace(path + ".tmp", path)
+
+
 def names():
-    return json.load(open(NAMES)) if os.path.exists(NAMES) else {}
+    return read_json(NAMES, {})
 
 
 @app.get("/api/index")
@@ -196,8 +207,7 @@ async def set_name(req: Request):
         nm[key] = body["name"].strip()
     else:
         nm.pop(key, None)
-    with open(NAMES, "w") as f:
-        json.dump(nm, f, indent=1, sort_keys=True)
+    write_json(NAMES, nm, sort_keys=True)
     return {"ok": True}
 
 
@@ -206,7 +216,7 @@ VARIANTS = os.path.join(CACHE, "variants.json")  # saved steer setups, per model
 
 @app.get("/api/variants")
 def get_variants():
-    return json.load(open(VARIANTS, encoding="utf-8")) if os.path.exists(VARIANTS) else []
+    return read_json(VARIANTS, [])
 
 
 @app.post("/api/variants")
@@ -215,9 +225,24 @@ async def set_variants(req: Request):
     v = await req.json()
     if not isinstance(v, list) or not all(isinstance(x, dict) and isinstance(x.get("neurons"), list) for x in v):
         return JSONResponse({"error": "expected a list of variants"}, status_code=400)
-    with open(VARIANTS + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(v, f, ensure_ascii=False, indent=1)
-    os.replace(VARIANTS + ".tmp", VARIANTS)
+    write_json(VARIANTS, v)
+    return {"ok": True}
+
+
+SESSION = os.path.join(CACHE, "chat_session.json")  # the Chat tab's steering stack and runs, restored on reload
+
+
+@app.get("/api/session")
+def get_session():
+    return read_json(SESSION, {})
+
+
+@app.post("/api/session")
+async def set_session(req: Request):
+    v = await req.json()
+    if not isinstance(v, dict):
+        return JSONResponse({"error": "expected an object"}, status_code=400)
+    write_json(SESSION, v)
     return {"ok": True}
 
 

@@ -19,6 +19,7 @@ explorer/cache/agent/
 explorer/names.json
 explorer/cache*/names.json
 explorer/cache*/variants.json
+explorer/cache*/chat_session.json
 explorer/*.local.md
 
 # per-machine pod settings
