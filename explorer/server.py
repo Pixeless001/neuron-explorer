@@ -1405,11 +1405,11 @@ def _claude_cmd(cid):
                                        "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": cid}}}}
     cmd = ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
            "--system-prompt-file", agent_prompt_file(), "--mcp-config", json.dumps(mcp), "--strict-mcp-config",
-           # file tools and a shell, so it can run scripts against this server (e.g. score a file it shouldn't read)
+           # read-only file tools besides the explorer's own
            "--tools", *FILE_TOOLS, "--allowedTools", "mcp__explorer", *FILE_TOOLS,
-           "--add-dir", os.path.expanduser("~"), "--setting-sources", "project"]
-    if os.environ.get("EXPLORER_CLAUDE_MODEL"):
-        cmd += ["--model", os.environ["EXPLORER_CLAUDE_MODEL"]]
+           "--add-dir", os.path.expanduser("~"), "--setting-sources", "project",
+           "--model", os.environ.get("EXPLORER_CLAUDE_MODEL", "claude-opus-5-5"),
+           "--effort", os.environ.get("EXPLORER_CLAUDE_EFFORT", "medium")]
     # resume once the session exists on disk (any earlier turn creates it)
     return cmd + (["--resume", cid] if _session_file(cid) else ["--session-id", cid])
 
