@@ -616,7 +616,13 @@ class Runtime:
                     for _ in range(max_new):
                         if cancel is not None and cancel.is_set():
                             break
-                        nxt = out.logits[:, -1].argmax(-1)
+                        logits = out.logits[:, -1].float()
+                        for r in range(R):  # ponytail: flat penalty on recent tokens; add a UI knob if it needs tuning per persona
+                            if out_ids[r]:
+                                seen = torch.tensor(sorted(set(out_ids[r][-256:])), device=logits.device)
+                                l = logits[r, seen]
+                                logits[r, seen] = torch.where(l > 0, l / 1.3, l * 1.3)
+                        nxt = logits.argmax(-1)
                         for r in range(R):
                             if done[r]:
                                 continue
