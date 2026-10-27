@@ -1135,7 +1135,7 @@ async def agent_ui(req: Request):
 
 
 UPLOADS = os.path.join(AGENT_DIR, "uploads")
-FILE_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"]
+FILE_TOOLS = ["Read", "Glob", "Grep"]  # read-only: no shell or file edits for the agent
 
 
 @app.post("/api/agent/upload")
@@ -1640,7 +1640,7 @@ async def _ensure_codex(c):
     await _rpc(c, "initialize", {"clientInfo": {"name": "neuron-explorer", "version": "0.1"}})
     mcp = {"explorer": {"command": sys.executable, "args": [os.path.join(ROOT, "explorer", "agent_mcp.py")],
                         "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": c["session"]}}}
-    opts = {"cwd": AGENT_DIR, "approvalPolicy": "never", "sandbox": "danger-full-access", "config": {"mcp_servers": mcp},
+    opts = {"cwd": AGENT_DIR, "approvalPolicy": "never", "sandbox": "read-only", "config": {"mcp_servers": mcp},
             "developerInstructions": open(agent_prompt_file()).read() + CODEX_NOTE.replace("{ROOT}", ROOT)}
     thread = _meta().get(c["session"], {}).get("thread")
     r = await _rpc(c, "thread/resume", {"threadId": thread, **opts}) if thread else await _rpc(c, "thread/start", opts)
