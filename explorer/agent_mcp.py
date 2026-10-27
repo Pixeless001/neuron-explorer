@@ -7,6 +7,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+import uuid
 
 URL = os.environ.get("EXPLORER_URL", "http://127.0.0.1:8791")
 CHAT = os.environ.get("EXPLORER_CHAT", "")
@@ -16,6 +17,9 @@ with urllib.request.urlopen(f"{URL}/api/index", timeout=30) as _r:  # the explor
 LAYER = {"type": "integer", "description": f"layer, 0-{ARCH['n_layers'] - 1}"}
 LN = {"layer": LAYER, "n": {"type": "integer", "description": f"neuron, 0-{ARCH['inter'] - 1}"}}
 HEAD = {"layer": LAYER, "head": {"type": "integer", "description": f"head: 0-{ARCH['attn_heads'] - 1} on full-attention layers, 0-{ARCH['linear_v_heads'] - 1} on linear-attention layers"}}
+STACK = {"type": "array", "description": "neurons steered together; the reversed column flips every dose",
+         "items": {"type": "object", "properties": {**LN, "dose": {"type": "number"}}, "required": ["layer", "n", "dose"]}}
+MODE = {"type": "string", "enum": ["add", "mul"], "default": "add"}
 TOOLS = [
     {"name": "overview", "description": "Model architecture and which layers have sweep runs (rollouts and rankings).",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -128,11 +132,18 @@ TOOLS = [
                                                        "layers": {"type": "array", "items": {"type": "integer"}},
                                                        "chat": {"type": "boolean", "default": False}},
                      "required": ["text"]}},
-    {"name": "camera", "description": "Move the person's 3D view. mode 'home': the whole model. 'layer': look at one "
-     "layer's neuron sheet face-on (give layer). 'neuron': fly close to one neuron (give layer and n; closeness 0.1 = very "
-     "close, 0.5 = wide).",
-     "inputSchema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["home", "layer", "neuron"]},
-                                                       **LN, "closeness": {"type": "number", "default": 0.22}},
+    {"name": "camera", "description": "Move the person's 3D view, animated, while they watch. mode 'home': the whole "
+     "model. 'layer': look at one layer's neuron sheet face-on (give layer). 'neuron': fly close to one neuron (give "
+     "layer and n; closeness 0.1 = very close, 0.5 = wide). 'view': frame a span of layers (layers [lo, hi], default "
+     "all), framed to fit beside the side panels, from any angle: azimuth 0 = broadside (layers in a row left to "
+     "right, sheets edge-on), 90 = from the output end looking down the layer axis (sheets face-on), -90 = from the "
+     "input end; elevation 0 = level, 90 = from above; home is about 32 / 19; an omitted angle keeps the current one. "
+     "zoom > 1 closer, < 1 wider.",
+     "inputSchema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["home", "layer", "neuron", "view"]},
+                                                       **LN, "closeness": {"type": "number", "default": 0.22},
+                                                       "layers": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                                                       "azimuth": {"type": "number"}, "elevation": {"type": "number"},
+                                                       "zoom": {"type": "number", "default": 1}},
                      "required": ["mode"]}},
     {"name": "annotate_neurons", "description": "Pin short text labels to neurons on the 3D map (they follow the camera). "
      "Replaces the previous labels; an empty list clears them. Keep each label a few words.",
@@ -148,9 +159,45 @@ TOOLS = [
      "matching neurons listed and can click them.",
      "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
     {"name": "open_tab", "description": "Switch the open neuron's panel to a tab: examples (sweep rollouts), chat (the "
-     "person's own steered chat) or details (lenses and connections).",
-     "inputSchema": {"type": "object", "properties": {"tab": {"type": "string", "enum": ["examples", "chat", "details"]}},
+     "person's own steered chat), details (lenses and connections) or variants (saved steer setups).",
+     "inputSchema": {"type": "object", "properties": {"tab": {"type": "string", "enum": ["examples", "chat", "details", "variants"]}},
                      "required": ["tab"]}},
+    {"name": "variants", "description": "The person's saved steer setups (their Variants tab): [{id, name, mode, neurons: "
+     "[{layer, n, dose}], prompt}]. mode 'add': dose in units of the layer's median residual norm (0.8 is a typical "
+     "push, negative pushes the other way); 'mul': the neuron's activation times dose.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "save_variant", "description": "Save a steer setup to the person's Variants tab (a variant with the same name "
+     "is replaced). Only when the person asks, or after they agree to save it.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "neurons": STACK, "mode": MODE,
+                                                       "prompt": {"type": "string", "description": "the prompt it is run on"}},
+                     "required": ["name", "neurons"]}},
+    {"name": "delete_variant", "description": "Delete a saved variant by name. Only when the person asks.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "load_variant", "description": "Load a saved variant into the person's Chat tab (its steering stack and "
+     "prompt). run=true also generates there, so they watch the steered, normal and reversed replies stream in.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "run": {"type": "boolean", "default": False}},
+                     "required": ["name"]}},
+    {"name": "set_steering", "description": "Set up the person's Chat tab: the neurons steered together with their doses, "
+     "the mode, the prompt, and which reply columns show ([steered +, normal, steered -]). run=true generates there "
+     "(slow on CPU; to read rollouts yourself, use `steer`). Replaces their current stack and clears that chat.",
+     "inputSchema": {"type": "object", "properties": {"neurons": STACK, "mode": MODE, "prompt": {"type": "string"},
+                                                       "run": {"type": "boolean", "default": False},
+                                                       "show": {"type": "array", "items": {"type": "boolean"}, "minItems": 3, "maxItems": 3}},
+                     "required": ["neurons"]}},
+    {"name": "view_settings", "description": "Change what the person sees; give only what should change. layout: "
+     "sheet layout ('index' order or 'writes', similar output directions together). web: show the open neuron's "
+     "connection web; web_depth: its top links each way (1-24). junk: lone �, punctuation and whitespace tokens in "
+     "every token list ('show', 'dim', 'hide'). group_variants: merge word variants (create / created) into one chip. "
+     "view: 'map' or 'embeddings'. layer: the current layer (its list and embeddings). left_panel / neuron_panel: show "
+     "or hide the side panels (more room for the map). left_tab: 'network' or 'run' (text through the model).",
+     "inputSchema": {"type": "object", "properties": {"layout": {"type": "string", "enum": ["index", "writes"]},
+                                                       "web": {"type": "boolean"}, "web_depth": {"type": "integer"},
+                                                       "junk": {"type": "string", "enum": ["show", "dim", "hide"]},
+                                                       "group_variants": {"type": "boolean"},
+                                                       "view": {"type": "string", "enum": ["map", "embeddings"]},
+                                                       "layer": {"type": "integer"}, "left_panel": {"type": "boolean"},
+                                                       "neuron_panel": {"type": "boolean"},
+                                                       "left_tab": {"type": "string", "enum": ["network", "run"]}}}},
     {"name": "select_neuron", "description": "Open a neuron in the explorer: its panel, and its connection web on the map.",
      "inputSchema": {"type": "object", "properties": LN, "required": ["layer", "n"]}},
     {"name": "head", "description": "One attention head from weights, by role. q / k / v: the earlier neurons whose "
@@ -204,6 +251,17 @@ def post(path, body, timeout=60):
     req = urllib.request.Request(f"{URL}{path}", json.dumps(body).encode(), {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
+
+
+def stack(neurons, mode):
+    """Checks a steering stack against the model before it reaches the person's page."""
+    if mode not in ("add", "mul") or not neurons:
+        raise ValueError("mode must be 'add' or 'mul', with at least one neuron")
+    out = [{"layer": int(x["layer"]), "n": int(x["n"]), "dose": float(x["dose"])} for x in neurons]
+    for x in out:
+        if not (0 <= x["layer"] < ARCH["n_layers"] and 0 <= x["n"] < ARCH["inter"]):
+            raise ValueError(f"no neuron L{x['layer']} N{x['n']} (layers 0-{ARCH['n_layers'] - 1}, neurons 0-{ARCH['inter'] - 1})")
+    return out
 
 
 def call(name, a):
@@ -277,6 +335,35 @@ def call(name, a):
         return post("/api/agent/compare", a, timeout=900)
     if name == "activations":
         return post("/api/agent/activations", a, timeout=900)
+    if name == "variants":
+        return get("/api/variants")
+    if name == "save_variant":
+        v = {"id": str(uuid.uuid4()), "name": a["name"].strip(), "mode": a.get("mode", "add"),
+             "neurons": stack(a["neurons"], a.get("mode", "add")), "prompt": a.get("prompt", "")}
+        if not v["name"]:
+            raise ValueError("a variant needs a name")
+        post("/api/variants", [v] + [x for x in get("/api/variants") if x["name"] != v["name"]])
+        post("/api/agent/ui", {"chat": CHAT, "action": "variants"})
+        return {"saved": v}
+    if name == "delete_variant":
+        vs = get("/api/variants")
+        keep = [x for x in vs if x["name"] != a["name"]]
+        if len(keep) == len(vs):
+            raise ValueError(f"no variant named {a['name']!r}; saved: {[x['name'] for x in vs]}")
+        post("/api/variants", keep)
+        post("/api/agent/ui", {"chat": CHAT, "action": "variants"})
+        return {"deleted": a["name"]}
+    if name == "load_variant":
+        vs = get("/api/variants")
+        v = next((x for x in vs if x["name"] == a["name"]), None)
+        if v is None:
+            raise ValueError(f"no variant named {a['name']!r}; saved: {[x['name'] for x in vs]}")
+        return post("/api/agent/ui", {"chat": CHAT, "action": "steering", "neurons": v["neurons"], "mode": v["mode"],
+                                      "prompt": v.get("prompt", ""), "run": bool(a.get("run"))})
+    if name == "set_steering":
+        return post("/api/agent/ui", {"chat": CHAT, "action": "steering", **a, "neurons": stack(a["neurons"], a.get("mode", "add"))})
+    if name == "view_settings":
+        return post("/api/agent/ui", {"chat": CHAT, "action": "view", **a})
     ui = {"camera": "camera", "annotate_neurons": "annotate", "show_text": "text", "show_search": "search", "open_tab": "tab"}
     if name in ui:
         return post("/api/agent/ui", {"chat": CHAT, "action": ui[name], **a})

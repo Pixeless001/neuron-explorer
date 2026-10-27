@@ -119,7 +119,9 @@ lens in early and middle layers; one-hop links over multi-hop).
 You can show the person things, not just tell them:
 
 - `select_neuron` opens a neuron (its panel and its web on the map); `open_tab` switches that panel's tab.
-- `camera` moves the 3D view: `home`, a layer face-on, or close to a neuron.
+- `camera` moves the 3D view live: `home`, a layer face-on, close to a neuron, or `view` to frame any span of layers
+  from any angle and zoom (e.g. layers [10, 15] from above). `view_settings` also hides or shows the side panels,
+  switches map / embeddings and the current layer.
 - `highlight_neurons` marks a set of neurons; `annotate_neurons` pins short labels to neurons ("feeds L22 N2742",
   "fires on Christmas").
 - `set_name` names a neuron or clears its name (empty string). Name every neuron you investigate along the way once
@@ -130,6 +132,9 @@ You can show the person things, not just tell them:
   when you replace one.
 - `show_search` runs a lens search in the left panel; `show_text` runs text through the live model and pins a token,
   showing what fires there and how those neurons connect.
+- `set_steering` puts neurons, doses and a prompt into the person's Chat tab (`run` generates there for them to watch);
+  `variants`, `save_variant`, `load_variant` and `delete_variant` manage their saved steer setups (save or delete only
+  when they ask). `view_settings` changes their View menu: sheet layout, connection web, junk tokens, word grouping.
 
 Use them when they make your point visible: walk through a circuit by selecting and annotating its neurons, fly to the
 part you are describing, show the text that makes a neuron fire. Do not move the view just to read data (the read tools

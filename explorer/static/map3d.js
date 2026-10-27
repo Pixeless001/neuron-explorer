@@ -627,6 +627,36 @@ export function createMap(canvas, labelsDiv, arch, cb) {
     flyToNeuron(layer, n, closeness = 0.22) { flyTo(neuronPos(layer, n), homeDist * closeness); },
     get layerMode() { return layerMode; },
     home() { flyTo(home.target, homeDist); },
+    // frame layers lo..hi from azimuth / elevation in degrees (0 = broadside, 90 = from the output end down the
+    // layer axis; home is about 32 / 19), keeping the current angle when one is not given; zoom > 1 is closer
+    orbit({ lo = 0, hi = L - 1, azimuth, elevation, zoom = 1 } = {}) {
+      lo = Math.max(0, Math.min(L - 1, lo)); hi = Math.max(lo, Math.min(L - 1, hi));
+      const xa = layerX(lo) + ATTN_DX, xb = layerX(hi) + MLP_DX, ytop = SHEET_Y0 + SHEET;
+      const c = new THREE.Vector3((xa + xb) / 2, ytop / 2, 0);
+      const cur = camera.position.clone().sub(controls.target).normalize();
+      const az = THREE.MathUtils.degToRad(azimuth ?? THREE.MathUtils.radToDeg(Math.atan2(cur.x, cur.z)));
+      const el = THREE.MathUtils.degToRad(Math.max(-85, Math.min(85, elevation ?? THREE.MathUtils.radToDeg(Math.asin(cur.y)))));
+      const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+      // the closest distance at which every corner of the span lands on screen between the side panels (bisection)
+      const box = [];
+      for (const x of [xa, xb]) for (const y of [0, ytop]) for (const z of [-SHEET / 2, SHEET / 2]) box.push(new THREE.Vector3(x, y, z));
+      const cam = camera.clone(), W = canvas.clientWidth;
+      const xl = -1 + 2 * insets.left / W + 0.05, xr = 1 - 2 * insets.right / W - 0.05;
+      const fits = d => {
+        cam.position.copy(c).addScaledVector(dir, d); cam.lookAt(c); cam.updateMatrixWorld();
+        return box.every(p => { const v = p.clone().project(cam); return v.z < 1 && v.x > xl && v.x < xr && Math.abs(v.y) < 0.88; });
+      };
+      let near = 0.5, far = 600;
+      for (let i = 0; i < 32; i++) { const m = (near + far) / 2; if (fits(m)) far = m; else near = m; }
+      const dist = far / Math.max(0.1, zoom);
+      const from = controls.target.clone(), p0 = camera.position.clone(), p1 = c.clone().addScaledVector(dir, dist), t0 = performance.now();
+      (function step(t) {
+        const k = Math.min(1, (t - t0) / 600), e = k * k * (3 - 2 * k);
+        controls.target.lerpVectors(from, c, e); camera.position.lerpVectors(p0, p1, e);
+        controls.update(); render();
+        if (k < 1) requestAnimationFrame(step);
+      })(t0);
+    },
     setMarks(marks) {
       lastMarks = marks;
       const p = [], c = [], up = new THREE.Color(1.0, 0.71, 0.28), down = new THREE.Color(1.0, 0.31, 0.6);
