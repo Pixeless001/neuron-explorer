@@ -27,8 +27,8 @@ ap.add_argument("--neighbors", type=int, default=30)
 a = ap.parse_args()
 
 root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
-index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
-cfg = json.load(open(os.path.join(root, "config.json")))["text_config"]
+index = json.load(open(os.path.join(root, "model.safetensors.index.json"), encoding="utf-8"))["weight_map"]
+cfg = json.load(open(os.path.join(root, "config.json"), encoding="utf-8"))["text_config"]
 L, N = cfg["num_hidden_layers"], cfg["intermediate_size"]
 side = math.ceil(math.sqrt(N))  # the map draws the same grid (map3d.js gridSide)
 

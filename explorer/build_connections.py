@@ -31,8 +31,8 @@ dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_av
 DT = torch.float32 if dev == "cpu" else torch.bfloat16  # CPUs without AMX run bf16 matmuls slowly
 
 root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
-index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
-cfg = json.load(open(os.path.join(root, "config.json")))["text_config"]
+index = json.load(open(os.path.join(root, "model.safetensors.index.json"), encoding="utf-8"))["weight_map"]
+cfg = json.load(open(os.path.join(root, "config.json"), encoding="utf-8"))["text_config"]
 L, N, K = cfg["num_hidden_layers"], cfg["intermediate_size"], a.k
 
 

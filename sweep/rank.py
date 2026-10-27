@@ -91,8 +91,8 @@ def main():
     ap.add_argument("--find", default="", help="comma-separated neuron ids to report ranks for")
     a = ap.parse_args()
 
-    records = compute_units([json.loads(l) for l in open(a.jsonl)], a.max_rel, a.top_words)
-    with open(a.out, "w") as f:
+    records = compute_units([json.loads(l) for l in open(a.jsonl, encoding="utf-8")], a.max_rel, a.top_words)
+    with open(a.out, "w", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r) + "\n")
 

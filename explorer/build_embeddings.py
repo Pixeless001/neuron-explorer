@@ -21,7 +21,7 @@ def main():
     ap.add_argument("--neighbors", type=int, default=15)
     a = ap.parse_args()
 
-    rows = [json.loads(l) for l in open(a.jsonl)]
+    rows = [json.loads(l) for l in open(a.jsonl, encoding="utf-8")]
     import torch
     dev = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     enc = SentenceTransformer(a.model, device=dev)
@@ -36,7 +36,7 @@ def main():
         "prompt": [r["prompt"] for r in rows], "dose": [r["dose"] for r in rows],
     }
     path = a.jsonl.replace(".jsonl", ".umap.json")
-    json.dump(out, open(path, "w"))
+    json.dump(out, open(path, "w", encoding="utf-8"))
     print(f"{len(rows)} rollouts -> {path}")
 
 

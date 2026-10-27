@@ -72,7 +72,7 @@ def layer_runs():
     """layer -> path of its sweep run: main_rel preferred, then the largest (calibration runs excluded)."""
     best = {}
     for meta_path in glob.glob(os.path.join(RUNS, "*.meta.json")):
-        meta = json.load(open(meta_path))
+        meta = json.load(open(meta_path, encoding="utf-8"))
         if meta.get("design_name", "main") == "calib":
             continue
         jsonl = meta_path.replace(".meta.json", ".jsonl")
@@ -99,24 +99,24 @@ def load_layer(layer):
         if _cache.get(layer, {}).get("key") == key:
             return _cache[layer]
         if not (os.path.exists(units_path) and os.path.getmtime(units_path) >= os.path.getmtime(path)):
-            full = [json.loads(l) for l in open(path)]  # ranking needs token ids; done once, then dropped
-            with open(units_path + ".tmp", "w") as f:
+            full = [json.loads(l) for l in open(path, encoding="utf-8")]  # ranking needs token ids; done once, then dropped
+            with open(units_path + ".tmp", "w", encoding="utf-8") as f:
                 f.writelines(json.dumps(u) + "\n" for u in compute_units(full))
             del full
             os.replace(units_path + ".tmp", units_path)
             key = (path, os.path.getmtime(path), os.path.getmtime(units_path))
-        units = [json.loads(l) for l in open(units_path)]
+        units = [json.loads(l) for l in open(units_path, encoding="utf-8")]
         # keep only what the explorer shows; token ids, logprobs and alternatives stay on disk
         slim = ("kind", "neuron", "prompt", "dose", "rel_push", "text", "finish", "n_gen")
         rows = []
-        for l in open(path):
+        for l in open(path, encoding="utf-8"):
             r = json.loads(l)
             rows.append({k: r[k] for k in slim})
         by_unit = {}
         for i, r in enumerate(rows):
             by_unit.setdefault((r["kind"], r["neuron"]), []).append(i)
         _cache[layer] = {"key": key, "path": path, "rows": rows, "units": units, "by_unit": by_unit,
-                         "meta": json.load(open(path.replace(".jsonl", ".meta.json")))}
+                         "meta": json.load(open(path.replace(".jsonl", ".meta.json"), encoding="utf-8"))}
         return _cache[layer]
 
 
@@ -132,7 +132,7 @@ def ranked_words(layer):
     key = (units_path, os.path.getmtime(units_path))
     if _ranked.get(layer, (None,))[0] != key:
         words = {}
-        for line in open(units_path):
+        for line in open(units_path, encoding="utf-8"):
             u = json.loads(line)
             if u["kind"] == "neuron":
                 words[u["neuron"]] = [w for w, _, _ in u["words"][:4]]
@@ -597,7 +597,7 @@ def _head_profiles():
     if _hprof.get("key") == key:
         return _hprof["data"]
     if os.path.exists(path):
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = json.load(f)
         if d.get("key") == key:
             _hprof.update(key=key, data=d)
@@ -653,7 +653,7 @@ def _head_profiles():
                   "src": [[s, round(l, 1)] for s, l, _, _ in src], "pairs": pairs}
     d = {"key": key, "texts": HEAD_TEXTS,
          "tokens": [[s for s, _ in rt.token_units(rt.tok(x).input_ids)] for x in HEAD_TEXTS], "heads": out}
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(d, f)
     _hprof.update(key=key, data=d)
     return d
@@ -1199,7 +1199,7 @@ async def agent_upload(req: Request):
     name = os.path.basename(b.get("name") or "file")
     with open(os.path.join(UPLOADS, f"{fid}-{name}"), "wb") as f:
         f.write(raw)
-    with open(os.path.join(UPLOADS, f"{fid}.json"), "w") as f:
+    with open(os.path.join(UPLOADS, f"{fid}.json"), "w", encoding="utf-8") as f:
         json.dump({"name": name, "type": b.get("type") or "", "size": len(raw)}, f)
     return {"id": fid, "name": name, "size": len(raw)}
 
@@ -1211,7 +1211,7 @@ def attachment_block(fid):
     meta_path = os.path.join(UPLOADS, f"{fid}.json")
     if not os.path.exists(meta_path):
         return None
-    meta = json.load(open(meta_path))
+    meta = json.load(open(meta_path, encoding="utf-8"))
     raw = open(os.path.join(UPLOADS, f"{fid}-{meta['name']}"), "rb").read()
     kind = meta["type"]
     if kind in ("image/png", "image/jpeg", "image/gif", "image/webp"):
@@ -1232,19 +1232,19 @@ AGENT_LOCAL = os.path.join(ROOT, "explorer", "agent_prompt.local.md")  # this ma
 def agent_prompt_file():
     """agent_prompt.md, then agent_methodology.md and agent_prompt.local.md when present, with {ROOT} filled in as
     this checkout's path, written beside the chat's working files."""
-    text = open(AGENT_PROMPT).read()
+    text = open(AGENT_PROMPT, encoding="utf-8").read()
     for extra in (AGENT_METHOD, AGENT_LOCAL):
         if os.path.exists(extra):
-            text = text.rstrip() + "\n\n" + open(extra).read()
+            text = text.rstrip() + "\n\n" + open(extra, encoding="utf-8").read()
     text = text.replace("{ROOT}", ROOT).replace("{MODEL}", MODEL)
     for k, v in (("LAYERS", "n_layers"), ("INTER", "inter"), ("HIDDEN", "hidden"), ("ATTN_HEADS", "attn_heads"),
                  ("LINEAR_HEADS", "linear_v_heads")):
         text = text.replace("{" + k + "}", str(ARCH[v]))
     out = os.path.join(AGENT_DIR, "system_prompt.md")
-    if not os.path.exists(out) or open(out).read() != text:
+    if not os.path.exists(out) or open(out, encoding="utf-8").read() != text:
         if os.path.exists(out):
             os.chmod(out, 0o644)
-        with open(out, "w") as f:
+        with open(out, "w", encoding="utf-8") as f:
             f.write(text)
         os.chmod(out, 0o444)  # generated: edits belong in the source files above
     return out
@@ -1326,7 +1326,7 @@ def agent_chats(limit: int = 60):
         hit = _chat_list.get(path)
         if not hit or hit[0] != mt:
             title, turns = None, 0
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 for line in f:
                     try:
                         t = _user_text(json.loads(line))
@@ -1342,7 +1342,7 @@ def agent_chats(limit: int = 60):
         path = os.path.join(CODEX_LOGS, f"{os.path.basename(cid)}.jsonl")
         if m.get("agent") != "codex" or not os.path.exists(path):
             continue
-        users = [e for e in map(json.loads, open(path)) if e.get("t") == "user"]
+        users = [e for e in map(json.loads, open(path, encoding="utf-8")) if e.get("t") == "user"]
         if users:
             out.append({"chat": cid, "t": int(os.path.getmtime(path)), "title": users[0]["text"].strip()[:120], "turns": len(users), "agent": "codex"})
     return sorted(out, key=lambda c: -c["t"])[:limit]
@@ -1353,13 +1353,13 @@ def agent_history(chat: str):
     """A past chat as the events a live turn streams (text, tool, tool_result), with a user event per message."""
     if _meta().get(chat, {}).get("agent") == "codex":
         path = os.path.join(CODEX_LOGS, f"{os.path.basename(chat)}.jsonl")
-        ev = [e for e in map(json.loads, open(path)) if e.get("t") in ("user", "text", "tool", "tool_result")] if os.path.exists(path) else []
+        ev = [e for e in map(json.loads, open(path, encoding="utf-8")) if e.get("t") in ("user", "text", "tool", "tool_result")] if os.path.exists(path) else []
         return {"chat": chat, "agent": "codex", "events": ev}
     path = _session_file(chat)
     if not path:
         return {"events": []}
     ev, seen_refusals = [], set()
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             try:
                 m = json.loads(line)
@@ -1407,10 +1407,10 @@ async def agent_rewind(req: Request):
             _meta_set(sid, turns=turns[:-1])
         path = os.path.join(CODEX_LOGS, f"{os.path.basename(sid)}.jsonl")
         if os.path.exists(path):
-            ev = [json.loads(x) for x in open(path)]
+            ev = [json.loads(x) for x in open(path, encoding="utf-8")]
             last = max((i for i, e in enumerate(ev) if e.get("t") == "user"), default=None)
             if last is not None:
-                with open(path, "w") as f:
+                with open(path, "w", encoding="utf-8") as f:
                     f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in ev[:last])
         return {"ok": True, "cut": bool(turns)}
     if sid in _chats:  # a live process holds the conversation in memory; the next message resumes from the cut file
@@ -1418,7 +1418,7 @@ async def agent_rewind(req: Request):
     path = _session_file(sid)
     if not path:
         return {"ok": True, "cut": False}
-    lines = open(path).read().splitlines(True)
+    lines = open(path, encoding="utf-8").read().splitlines(True)
     at = None
     for i in range(len(lines) - 1, -1, -1):
         try:
@@ -1435,7 +1435,7 @@ async def agent_rewind(req: Request):
     if not any(_user_text(json.loads(x)) is not None for x in keep if x.strip()):
         os.remove(path)  # nothing the person said is left: the next turn starts the session afresh
     else:
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.writelines(keep)
     return {"ok": True, "cut": True}
 
@@ -1467,7 +1467,7 @@ CODEX_LOGS = os.path.join(AGENT_DIR, "codex_logs")  # per codex chat: its events
 
 def _meta():
     try:
-        return json.load(open(CHAT_META))
+        return json.load(open(CHAT_META, encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -1476,7 +1476,7 @@ def _meta_set(cid, **kw):
     m = _meta()
     m.setdefault(cid, {}).update(kw)
     os.makedirs(AGENT_DIR, exist_ok=True)
-    with open(CHAT_META, "w") as f:
+    with open(CHAT_META, "w", encoding="utf-8") as f:
         json.dump(m, f)
 
 
@@ -1500,7 +1500,7 @@ def _chat(cid, agent=None):
 
 def _codex_log(cid, ev):
     os.makedirs(CODEX_LOGS, exist_ok=True)
-    with open(os.path.join(CODEX_LOGS, f"{os.path.basename(cid)}.jsonl"), "a") as f:
+    with open(os.path.join(CODEX_LOGS, f"{os.path.basename(cid)}.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(ev, ensure_ascii=False) + "\n")
 
 
@@ -1574,7 +1574,7 @@ def _codex_home():
         user = {}
     lines = [f'{k} = {json.dumps(user[k])}' for k in ("model", "model_reasoning_effort") if isinstance(user.get(k), str)]
     lines += ["", "[features]", "apps = false", "memories = false"]
-    with open(os.path.join(CODEX_HOME, "config.toml"), "w") as f:
+    with open(os.path.join(CODEX_HOME, "config.toml"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return CODEX_HOME
 
@@ -1688,7 +1688,7 @@ async def _ensure_codex(c):
     mcp = {"explorer": {"command": sys.executable, "args": [os.path.join(ROOT, "explorer", "agent_mcp.py")],
                         "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": c["session"]}}}
     opts = {"cwd": AGENT_DIR, "approvalPolicy": "never", "sandbox": "read-only", "config": {"mcp_servers": mcp},
-            "developerInstructions": open(agent_prompt_file()).read() + CODEX_NOTE.replace("{ROOT}", ROOT)}
+            "developerInstructions": open(agent_prompt_file(), encoding="utf-8").read() + CODEX_NOTE.replace("{ROOT}", ROOT)}
     thread = _meta().get(c["session"], {}).get("thread")
     r = await _rpc(c, "thread/resume", {"threadId": thread, **opts}) if thread else await _rpc(c, "thread/start", opts)
     c["thread"] = r["thread"]["id"]
@@ -1764,7 +1764,7 @@ def _codex_input(fid):
     mp = os.path.join(UPLOADS, f"{fid}.json")
     if not os.path.exists(mp):
         return None
-    meta = json.load(open(mp))
+    meta = json.load(open(mp, encoding="utf-8"))
     if meta["type"].startswith("image/"):
         return {"type": "localImage", "path": os.path.join(UPLOADS, f"{fid}-{meta['name']}")}
     blk = attachment_block(fid)

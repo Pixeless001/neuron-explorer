@@ -879,12 +879,12 @@ class Runtime:
         if getattr(self, "_vocab", None) is None:
             path = os.path.join(CACHE, "vocab.json")
             if os.path.exists(path):
-                self._vocab = json.load(open(path))
+                self._vocab = json.load(open(path, encoding="utf-8"))
             else:
                 if self.tok is None:
                     self.tok = AutoTokenizer.from_pretrained(MODEL)
                 self._vocab = [self.tok.decode([i]) for i in range(len(self.tok))]
-                json.dump(self._vocab, open(path, "w"))
+                json.dump(self._vocab, open(path, "w", encoding="utf-8"))
         return self._vocab
 
     # ---------- which neurons fire on a text ----------

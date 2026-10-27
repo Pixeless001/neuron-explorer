@@ -381,6 +381,7 @@ def reply(id_, result=None, error=None):
     sys.stdout.flush()
 
 
+sys.stdin.reconfigure(encoding="utf-8")  # the CLI sends UTF-8 whatever the console code page (cp1252 on Windows)
 for line in sys.stdin:
     if not line.strip():
         continue
