@@ -57,3 +57,41 @@ export function tokText(list, max = Infinity, sep = "  ") {
   return items.map(x => { const t = esc(x.tok) + (x.members.length > 1 ? `<sup>×${x.members.length}</sup>` : "");
     return x.junk && tokPrefs.junk === "dim" ? `<span class="junk">${t}</span>` : t; }).join(sep);
 }
+
+// markdown for model and agent replies: # headings, **bold**, *italic*, `code`, ``` blocks, - / 1. lists, > quotes,
+// --- rules. refs: "L12 N100" becomes a link that opens the neuron. Streaming text re-renders whole each time.
+function inline(t, refs) {
+  const codes = [];
+  let s = esc(t).replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  s = s.replace(/\*\*(\S(?:.*?\S)?)\*\*/g, "<b>$1</b>").replace(/__(\S(?:.*?\S)?)__/g, "<b>$1</b>")
+    .replace(/(^|[^*\w])\*(\S(?:.*?\S)?)\*(?![*\w])/g, "$1<i>$2</i>").replace(/(^|[^_\w])_(\S(?:.*?\S)?)_(?![_\w])/g, "$1<i>$2</i>");
+  if (refs) s = s.replace(/\bL(\d{1,2})[ \/]N(\d{1,4})\b/g, (m, l, n) => `<a class="nref" data-l="${l}" data-n="${n}">${m}</a>`);
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
+}
+export function md(src, refs = true) {
+  const out = [];
+  let list = null, code = null, para = [];
+  const flush = () => { if (para.length) { out.push(`<p>${para.map(l => inline(l, refs)).join("<br>")}</p>`); para = []; } };
+  const endList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of src.split("\n")) {
+    if (code) { if (/^\s*```/.test(line)) { out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); code = null; } else code.push(line); continue; }
+    if (/^\s*```/.test(line)) { flush(); endList(); code = []; continue; }
+    const h = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/), ul = line.match(/^\s*[-*+]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (ul || ol) {
+      flush();
+      const tag = ul ? "ul" : "ol";
+      if (list !== tag) { endList(); out.push(`<${tag}>`); list = tag; }
+      out.push(`<li>${inline((ul || ol)[1], refs)}</li>`);
+      continue;
+    }
+    endList();
+    if (h) { flush(); out.push(`<div class="mh mh${h[1].length}">${inline(h[2], refs)}</div>`); }
+    else if (/^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/.test(line)) { flush(); out.push("<hr>"); }
+    else if (/^\s*>/.test(line)) { flush(); out.push(`<blockquote>${inline(line.replace(/^\s*>\s?/, ""), refs)}</blockquote>`); }
+    else if (!line.trim()) flush();
+    else para.push(line);
+  }
+  if (code) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);  // a block still streaming
+  flush(); endList();
+  return out.join("");
+}

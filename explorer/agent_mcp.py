@@ -177,12 +177,13 @@ TOOLS = [
      "prompt). run=true also generates there, so they watch the steered, normal and reversed replies stream in.",
      "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "run": {"type": "boolean", "default": False}},
                      "required": ["name"]}},
-    {"name": "set_steering", "description": "Set up the person's Chat tab: the neurons steered together with their doses, "
-     "the mode, the prompt, and which reply columns show ([steered +, normal, steered -]). run=true generates there "
+    {"name": "set_steering", "description": "Set up the person's steering chat: the neurons steered together with their "
+     "doses, the mode, the prompt, and compare (also generate the unsteered and reversed replies beside the steered "
+     "one). run=true generates there "
      "(slow on CPU; to read rollouts yourself, use `steer`). Replaces their current stack and clears that chat.",
      "inputSchema": {"type": "object", "properties": {"neurons": STACK, "mode": MODE, "prompt": {"type": "string"},
                                                        "run": {"type": "boolean", "default": False},
-                                                       "show": {"type": "array", "items": {"type": "boolean"}, "minItems": 3, "maxItems": 3}},
+                                                       "compare": {"type": "boolean"}},
                      "required": ["neurons"]}},
     {"name": "view_settings", "description": "Change what the person sees; give only what should change. layout: "
      "sheet layout ('index' order or 'writes', similar output directions together). web: show the open neuron's "

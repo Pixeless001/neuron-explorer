@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=82";
 import { createScatter } from "./scatter.js?v=39";
-import { $, api, esc, fmtDose, bus, tokPrefs, tokChips, tokText } from "./common.js?v=2";
+import { $, api, esc, fmtDose, bus, tokPrefs, tokChips, tokText } from "./common.js?v=3";
 
 let agentSelecting = false, agentMarked = false;  // Claude's selections and marks (see agentUi); declared early, openNeuron reads them on load
 const state = { layer: null, units: {}, unitMap: {}, focus: null, view: "map" };

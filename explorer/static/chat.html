@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chat · Neuron Explorer</title>
-<link rel="stylesheet" href="style.css?v=72">
+<link rel="stylesheet" href="style.css?v=74">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%23151515%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%222.5%22 fill=%22%23ffd27a%22/%3E%3C/svg%3E">
 </head>
 <body class="chat-page">
@@ -23,6 +23,8 @@
       <form id="c-form">
         <div class="c-bar">
           <span class="seg" id="c-dir"><button type="button" data-d="writes" class="on" title="steer the model with the neurons below and compare replies">Steer</button><button type="button" data-d="reads" title="show the open neuron's activation on each token of your text">Read activations</button></span>
+          <label class="c-max" title="the longest reply, in tokens; steered replies often repeat until they reach it (about 5 tokens a second on this CPU)">Length <select id="c-max"><option>150</option><option>300</option><option>600</option><option>1200</option><option>2400</option></select></label>
+          <span class="toggles"><button type="button" id="c-compare" title="also generate the reply without the steering and with the steering reversed, side by side">Compare</button></span>
           <button type="button" id="c-save" class="ghost" title="save this steering setup to Variants">Save as variant</button>
           <button type="button" id="c-clear" class="ghost">Clear chat</button>
         </div>
@@ -36,7 +38,6 @@
           </div>
           <div id="c-stack"></div>
           <div class="c-addrow"><input id="c-add" placeholder="Add a neuron, e.g. L17 N63" aria-label="add a neuron to steer" spellcheck="false" autocomplete="off"><button type="button" id="c-add-open" class="ghost" hidden></button></div>
-          <div class="c-showrow"><span class="dim">Show</span><span class="toggles" id="c-show"><button type="button" data-r="0" class="on up">+ steered</button><button type="button" data-r="1" class="on">normal</button><button type="button" data-r="2" class="on down">− steered</button></span></div>
         </div>
         <div class="row"><input id="c-input" placeholder="Who are you?" autocomplete="off" aria-label="prompt"><button id="c-go" type="submit">Run</button></div>
       </form>
@@ -50,6 +51,7 @@
       <ul id="v-list"></ul>
     </div>
   </section>
+  <div id="split" role="separator" aria-orientation="vertical" aria-label="resize the chat panes" aria-valuemin="20" aria-valuemax="80" tabindex="0" title="drag to resize · double-click to reset"></div>
   <section class="pane" id="pane-claude">
     <nav class="pane-tabs"><span class="pane-title" id="a-title">Claude</span><select id="a-agent" class="dim" title="agent for new conversations"><option value="claude">claude</option><option value="codex">codex</option></select><button id="a-past" class="dim" title="past conversations">Past</button><button id="a-new" class="dim" title="start a new conversation">New</button></nav>
     <div id="tab-claude" class="tab on">
@@ -60,6 +62,6 @@
     </div>
   </section>
 </main>
-<script type="module" src="chat.js?v=2"></script>
+<script type="module" src="chat.js?v=4"></script>
 </body>
 </html>

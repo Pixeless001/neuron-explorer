@@ -1,7 +1,7 @@
 // the chat page (/chat): the steering chat and saved variants on the left, Claude on the right. Live-linked to the
 // explorer page through `bus`: the neuron open there drives the steering stack and the lens shown here, and what
 // Claude does to the screen (camera, selections, highlights, view) is applied there.
-import { $, api, esc, bus, tokPrefs, tokText } from "./common.js?v=2";
+import { $, api, esc, bus, md, tokPrefs, tokText } from "./common.js?v=3";
 
 const index = await api("/api/index");
 const arch = index.arch;
@@ -19,22 +19,46 @@ function setPane(p) {
 }
 document.querySelectorAll("#pane-steer .pane-tabs button").forEach(b => b.onclick = () => setPane(b.dataset.pane));
 
+// the boundary between the steering chat and Claude: drag it (or arrow keys while it has focus); remembered
+const split = $("#split"), mainEl = $(".chat-main");
+function setSplit(frac) {
+  frac = Math.min(0.8, Math.max(0.2, frac));
+  mainEl.style.setProperty("--left", `${(frac * 100).toFixed(1)}%`);
+  split.setAttribute("aria-valuenow", Math.round(frac * 100));
+  try { localStorage.setItem("chatSplit", frac); } catch {}
+}
+let splitAt = 0.53; try { splitAt = +(localStorage.getItem("chatSplit") || splitAt); } catch {}
+setSplit(splitAt);
+split.addEventListener("pointerdown", e => {
+  split.setPointerCapture(e.pointerId); document.body.classList.add("dragging");
+  const r = mainEl.getBoundingClientRect();
+  const move = ev => setSplit((ev.clientX - r.left) / r.width);
+  const up = () => { split.removeEventListener("pointermove", move); document.body.classList.remove("dragging"); };
+  split.addEventListener("pointermove", move); split.addEventListener("pointerup", up, { once: true });
+});
+split.addEventListener("keydown", e => {
+  const now = parseFloat(mainEl.style.getPropertyValue("--left")) / 100;
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setSplit(now + (e.key === "ArrowLeft" ? -0.03 : 0.03)); }
+});
+split.addEventListener("dblclick", () => setSplit(0.53));
+
 // ---------- chat: a stack of neurons steered together ----------
 // row 0 pushes every neuron by its dose, row 1 is left alone, row 2 reverses each push (add: -dose, ×: ×-dose)
 const DOSE = { add: { min: -2, max: 2, step: 0.05, def: 0.8 }, mul: { min: 0, max: 16, step: 0.5, def: 2 } };
 // auto: the stack still just follows the open neuron; adding a neuron or loading a variant takes it over
 // the stack, its runs and the prompt are saved per model on the server (chat_session.json) and restored here
 const session = await api("/api/session").catch(() => ({}));
-state.steer = { mode: "add", neurons: [], auto: true, show: [true, true, true], ...session.steer, dir: "writes" };
+state.steer = { mode: "add", neurons: [], auto: true, compare: false, max: 600, ...session.steer, dir: "writes" };
+delete state.steer.show;  // sessions from before the Compare toggle
 let sessionSaved = JSON.stringify(session), sessionTimer;
 // debounced, skipped while a run streams (its end saves) and when nothing changed; the last 50 runs are kept
 function saveSession() {
   clearTimeout(sessionTimer);
   sessionTimer = setTimeout(() => {
     if (running) return;
-    const { mode, neurons, auto, show } = state.steer;
-    const body = JSON.stringify({ steer: { mode, neurons, auto, show }, prompt: $("#c-input").value,
-      thread: state.thread.slice(-50).map(({ user, replies, mode, neurons, error }) => ({ user, replies, mode, neurons, ...(error && { error }) })) });
+    const { mode, neurons, auto, compare, max } = state.steer;
+    const body = JSON.stringify({ steer: { mode, neurons, auto, compare, max }, prompt: $("#c-input").value,
+      thread: state.thread.slice(-50).map(({ user, replies, mode, neurons, cols, cut, max, error }) => ({ user, replies, mode, neurons, cols, cut, max, ...(error && { error }) })) });
     if (body === sessionSaved) return;
     sessionSaved = body;
     fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body }).catch(() => { sessionSaved = ""; });
@@ -82,7 +106,8 @@ function renderStack() {
   $("#c-add-open").hidden = !open;
   if (open) $("#c-add-open").textContent = `+ add open ${nid(f)}`;
   document.querySelectorAll("#c-mode button").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
-  document.querySelectorAll("#c-show button").forEach(b => b.classList.toggle("on", S.show[+b.dataset.r]));
+  $("#c-compare").classList.toggle("on", !!S.compare);
+  $("#c-max").value = S.max;
   $("#v-current").textContent = S.neurons.length ? `Current: ${recipe(S.neurons, S.mode)}` : "Nothing to save yet: set up steering in Chat first.";
   $("#c-sum").textContent = S.neurons.length ? recipe(S.neurons, S.mode) : "";
   syncFold();
@@ -134,11 +159,8 @@ document.querySelectorAll("#c-mode button").forEach(b => b.onclick = () => {
   S.mode = b.dataset.m; S.neurons.forEach(x => x.dose = DOSE[S.mode].def);  // doses don't carry over between add and ×
   renderStack();
 });
-document.querySelectorAll("#c-show button").forEach(b => b.onclick = () => {
-  const s = state.steer.show, r = +b.dataset.r;
-  if (s[r] && s.filter(Boolean).length === 1) return;  // keep at least one column
-  s[r] = !s[r]; renderStack(); renderThread();
-});
+$("#c-compare").onclick = () => { state.steer.compare = !state.steer.compare; renderStack(); };
+$("#c-max").onchange = e => { state.steer.max = +e.target.value; renderStack(); };
 document.querySelectorAll("#c-dir button").forEach(b => b.onclick = () => {
   state.steer.dir = b.dataset.d;
   document.querySelectorAll("#c-dir button").forEach(x => x.classList.toggle("on", x === b));
@@ -157,16 +179,17 @@ function colDose(t, r) {
   const d = t.neurons[0].dose;
   return fmtStep(r === 0 ? d : -d, t.mode);
 }
-// each run: which neurons at which doses, the shared prompt, then the replies side by side (the label stays each
-// column's first child; streamed text is appended after it)
+// each run: which neurons at which doses, the shared prompt, then its replies side by side as markdown: the steered
+// one, and with Compare the unsteered and reversed ones (t.cols: the columns that run generated)
+const turnCols = t => t.cols || [0, 1, 2];
 function renderThread() {
-  const el = $("#c-thread"), show = state.steer.show;
+  const el = $("#c-thread");
   el.innerHTML = state.thread.length ? state.thread.map((t, i) => `<div class="turn" data-i="${i}">
     <div class="run-head"><span class="mono">${esc(recipe(t.neurons, t.mode))}</span>${t.neurons.length === 1 && unitName(t.neurons[0]) ? ` <span class="nm">${esc(unitName(t.neurons[0]))}</span>` : ""}</div>
     <div class="user">${esc(t.user)}</div>
-    <div class="cols" style="grid-template-columns: repeat(${show.filter(Boolean).length}, minmax(0, 1fr))">${ROWS.map((c, r) => `<div class="col ${c}${t.live && !t.done[r] ? " live" : ""}"${show[r] ? "" : " hidden"}><span class="lab">${COL_NAMES[r]} <b>${colDose(t, r)}</b></span>${esc(t.replies[r])}</div>`).join("")}
+    <div class="cols" style="grid-template-columns: repeat(${turnCols(t).length}, minmax(0, 1fr))">${turnCols(t).map(r => `<div class="col ${ROWS[r]}${t.live && !t.done[r] ? " live" : ""}" data-c="${r}"><span class="lab">${COL_NAMES[r]} <b>${colDose(t, r)}</b></span><div class="md">${md(t.replies[r], false)}</div>${t.cut?.includes(r) ? `<div class="cutnote" title="the reply had not ended; raise Length for longer replies">stopped at the ${t.max}-token limit</div>` : ""}</div>`).join("")}
     ${t.error ? `<div class="err">${esc(t.error)}</div>` : ""}</div></div>`).join("")
-    : `<div class="c-empty dim">Type a prompt and press Run. Each run shows the reply with the steering, without it, and with it reversed.</div>`;
+    : `<div class="c-empty dim">Type a prompt and press Run to see the steered reply. Turn on Compare to also see it without the steering and with the steering reversed.</div>`;
   saveSession();
 }
 // a new run scrolls to its top, so its header and the start of all three replies are in view while they stream
@@ -178,15 +201,17 @@ async function runSteer(text) {
   const S = state.steer;
   if (!S.neurons.length) { $("#c-add").focus(); return; }
   const neurons = S.neurons.map(x => ({ layer: x.layer, n: x.n, dose: x.dose }));
-  const history = state.thread.filter(t => !t.error).map(t => ({ user: t.user, replies: t.replies }));
-  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], mode: S.mode, neurons, live: true };
+  // a reply that run didn't generate carries on from the steered one, so every column has a whole conversation
+  const history = state.thread.filter(t => !t.error).map(t => ({ user: t.user, replies: [0, 1, 2].map(i => turnCols(t).includes(i) ? t.replies[i] : t.replies[0]) }));
+  const cols = S.compare ? [0, 1, 2] : [0];
+  const turn = { user: text, replies: ["", "", ""], done: [0, 1, 2].map(i => !cols.includes(i)), mode: S.mode, neurons, cols, max: S.max, live: true };
   state.thread.push(turn); $("#c-input").value = ""; renderThread(); showLastTurn();
-  const cols = [...$("#c-thread").lastElementChild.querySelectorAll(".col")];
+  const boxes = Object.fromEntries([...$("#c-thread").lastElementChild.querySelectorAll(".col")].map(c => [c.dataset.c, c.querySelector(".md")]));
   const ctl = new AbortController(), thread = state.thread;
   running = ctl; $("#c-go").textContent = "Stop"; $("#c-go").classList.add("stop");
   try {
     const res = await fetch("/api/steer", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
-      body: JSON.stringify({ neurons, mode: S.mode, prompt: text, history }) });
+      body: JSON.stringify({ neurons, mode: S.mode, prompt: text, history, signs: [1, 0, -1].filter((_, i) => cols.includes(i)), max_new: S.max }) });
     if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 160)}`);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = "";
@@ -199,9 +224,10 @@ async function runSteer(text) {
         if (!line.startsWith("data: ")) continue;
         const ev = JSON.parse(line.slice(6));
         if (ev.error) turn.error = ev.error;
+        if (ev.cut) turn.cut = ev.cut;
         if (ev.row == null) continue;
         turn.replies[ev.row] += ev.t;
-        cols[ev.row].lastChild.nodeType === 3 ? (cols[ev.row].lastChild.textContent += ev.t) : cols[ev.row].append(ev.t);
+        boxes[ev.row].innerHTML = md(turn.replies[ev.row], false);
       }
     }
   } catch (err) {
@@ -234,7 +260,7 @@ function loadVariant(v) {
   const S = state.steer;
   if (running) running.abort();
   S.auto = false; S.mode = v.mode === "mul" ? "mul" : "add"; S.neurons = v.neurons.map(x => ({ layer: +x.layer, n: +x.n, dose: +x.dose }));
-  if (Array.isArray(v.show) && v.show.some(Boolean)) S.show = [0, 1, 2].map(i => !!v.show[i]);
+  if (v.compare != null) S.compare = !!v.compare;
   if (v.prompt) $("#c-input").value = v.prompt;
   if (S.dir === "reads") $('#c-dir button[data-d="writes"]').click();
   state.thread = []; renderThread(); renderStack();
@@ -297,22 +323,6 @@ async function runReads(f, text) {
 // ---------- claude: one claude -p session per conversation ----------
 const agent = { chat: null, kind: "claude", busy: false, sending: 0, box: null, seg: null, segText: "", reply: "", waiters: [] };
 const agentEl = $("#tab-claude");
-function mdInline(t) {
-  return esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-    .replace(/\bL(\d{1,2})[ \/]N(\d{1,4})\b/g, (m, l, n) => `<a class="nref" data-l="${l}" data-n="${n}">${m}</a>`);
-}
-function md(src) {
-  const out = []; let list = false;
-  for (const line of src.split("\n")) {
-    const h = line.match(/^#{1,4}\s+(.*)/), li = line.match(/^\s*[-*]\s+(.*)/);
-    if (li) { if (!list) { out.push("<ul>"); list = true; } out.push(`<li>${mdInline(li[1])}</li>`); continue; }
-    if (list) { out.push("</ul>"); list = false; }
-    if (h) out.push(`<h3>${mdInline(h[1])}</h3>`);
-    else if (line.trim()) out.push(`<p>${mdInline(line)}</p>`);
-  }
-  if (list) out.push("</ul>");
-  return out.join("");
-}
 const EMPTY = `<div class="a-empty dim">Ask anything about the model, or open a neuron and press <b>explain</b>.</div>`;
 // the conversation persists in this browser: chat id (= claude session, resumed server side) and the rendered thread
 const AGENT_KEY = "explorer.agent";

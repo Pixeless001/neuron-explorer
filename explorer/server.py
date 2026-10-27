@@ -299,18 +299,22 @@ async def steer(req: Request):
 
     def work():
         try:
-            # each row replays its own earlier replies; the user turns are shared
+            # one row per sign asked for (1 steered, 0 unsteered, -1 reversed; default all three); each row replays
+            # its own column's earlier replies (columns 0, 1, 2), the user turns are shared
+            signs = [s for s in (1, 0, -1) if s in b.get("signs", (1, 0, -1))] or [1]
+            col = {1: 0, 0: 1, -1: 2}
             rows = []
-            for r in range(3):
+            for sg in signs:
                 msgs = []
                 for turn in b.get("history", []):
-                    msgs += [{"role": "user", "content": turn["user"]}, {"role": "assistant", "content": turn["replies"][r]}]
+                    msgs += [{"role": "user", "content": turn["user"]}, {"role": "assistant", "content": turn["replies"][col[sg]]}]
                 rows.append(msgs + [{"role": "user", "content": b["prompt"]}])
             # neurons: [{layer, n, dose}] steered together (or one neuron as layer, n, dose); row 2 reverses each
             mode = b.get("mode", "add")
             pushes = [(int(x["layer"]), int(x["n"]), float(x["dose"]), mode) for x in b.get("neurons") or [b]]
-            for row, delta in rt.steer_multi(pushes, rows, int(b.get("max_new", 300)), cancel):
-                loop.call_soon_threadsafe(q.put_nowait, {"row": row, "t": delta})
+            for row, delta in rt.steer_multi(pushes, rows, min(4000, int(b.get("max_new", 600))), cancel, signs):
+                ev = {"row": col[signs[row]], "t": delta} if row is not None else {"row": None, "cut": [col[signs[r]] for r in delta]}
+                loop.call_soon_threadsafe(q.put_nowait, ev)
         except Exception as e:  # surfaced in the UI next to the chat
             loop.call_soon_threadsafe(q.put_nowait, {"row": None, "error": repr(e)})
 
