@@ -775,7 +775,7 @@ function renderLensViews() {
   if ($("#d-lens")) $("#d-lens").outerHTML = `<div id="d-lens">${steer}<div class="lens" title="logit lens: the tokens the neuron's output direction points at directly, ignoring later layers"><div class="up"><div class="lab">+</div>${tok(L.up)}</div><div class="down"><div class="lab">−</div>${tok(L.down)}</div></div></div>`;
   const words = state.unitMap[L.layer]?.get(L.n)?.words || [];
   $("#c-lens").innerHTML = (words.length ? `<div class="words" title="words distinctive to this neuron's sweep rollouts">${esc(words.join("  "))}</div>` : "") +
-    (L.steer_up ? `<div title="steer lens: what pushing the neuron up (+) or down (−) makes the model say next"><span class="sgn up">+</span>${tokText(L.steer_up, 10)}</div><div title="steer lens, pushed down"><span class="sgn down">−</span>${tokText(L.steer_down, 10)}</div>` : "") +
+    (L.steer_up ? `<div class="sl" title="steer lens: what pushing the neuron up (+) or down (−) makes the model say next · click to show or fold the other lines"><span class="sgn up">+</span>${tokText(L.steer_up, 10)}</div><div class="sl" title="steer lens, pushed down"><span class="sgn down">−</span>${tokText(L.steer_down, 10)}</div>` : "") +
     `<div class="faintline" title="logit lens: tokens the neuron's output direction points at directly (+ positive, − negative)"><span class="sgn up">+</span>${tokText(L.up, 10)}</div><div class="faintline" title="logit lens, negative side"><span class="sgn down">−</span>${tokText(L.down, 10)}</div>`;
 }
 
@@ -888,6 +888,20 @@ function followFocus(f) {
   renderStack();
   return true;
 }
+// room for the replies: the steering panel folds to one summary line and the lens above the chat to its steer
+// lines; both remembered in this browser
+const chatFold = { steer: true, lens: true };
+try { Object.assign(chatFold, JSON.parse(localStorage.getItem("chatFold") || "{}")); } catch {}
+const saveFold = () => { try { localStorage.setItem("chatFold", JSON.stringify(chatFold)); } catch {} };
+function syncFold() {
+  const folded = chatFold.steer && state.steer.neurons.length > 0;  // an empty stack stays open, to add a neuron
+  $("#steer-panel").classList.toggle("folded", folded);
+  $("#c-fold").textContent = folded ? "Adjust" : "Done";
+  $("#c-fold").hidden = !state.steer.neurons.length;
+  $("#c-lens").classList.toggle("open", !chatFold.lens);
+}
+$("#c-fold").onclick = () => { chatFold.steer = !$("#steer-panel").classList.contains("folded"); saveFold(); syncFold(); };
+$("#c-lens").addEventListener("click", () => { chatFold.lens = !chatFold.lens; saveFold(); syncFold(); });
 function renderStack() {
   const S = state.steer, R = DOSE[S.mode];
   $("#c-stack").innerHTML = S.neurons.map((x, i) => `<div class="srow" data-i="${i}">
@@ -903,6 +917,8 @@ function renderStack() {
   document.querySelectorAll("#c-mode button").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
   document.querySelectorAll("#c-show button").forEach(b => b.classList.toggle("on", S.show[+b.dataset.r]));
   $("#v-current").textContent = S.neurons.length ? `Current: ${recipe(S.neurons, S.mode)}` : "Nothing to save yet: set up steering in Chat first.";
+  $("#c-sum").textContent = S.neurons.length ? recipe(S.neurons, S.mode) : "";
+  syncFold();
   saveSession();
 }
 function addToStack(layer, n, dose) {
@@ -922,6 +938,7 @@ $("#c-stack").addEventListener("input", e => {
   const row = e.target.closest(".srow"), i = +row.dataset.i;
   setDose(i, +e.target.value);
   row.querySelector(".sdose").value = fmtStep(state.steer.neurons[i].dose, state.steer.mode);
+  $("#c-sum").textContent = recipe(state.steer.neurons, state.steer.mode);
   saveSession();
 });
 $("#c-stack").addEventListener("change", e => {

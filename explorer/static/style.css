@@ -264,6 +264,9 @@ tr.con .logit .tok { font-size: 10.5px; }
 #c-lens .sgn { display: inline-block; width: 1.1em; font-family: var(--mono); }
 #c-lens .sgn.up { color: var(--up); } #c-lens .sgn.down { color: var(--down); }
 #c-lens .words { color: var(--dim); margin-bottom: 2px; }
+#c-lens { cursor: pointer; padding-top: 10px; padding-bottom: 8px; }
+#c-lens:not(.open) > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#c-lens:not(.open) .words, #c-lens:not(.open):has(.sl) .faintline { display: none; }
 #c-thread { flex: 1; overflow-y: auto; min-height: 0; padding: 14px 16px; }
 .c-empty { margin: 30px auto; max-width: 340px; text-align: center; font-size: 13.5px; line-height: 1.55; }
 #c-reads { display: none; line-height: 2; font-size: 14px; padding: 14px 16px; }
@@ -289,13 +292,20 @@ tr.con .logit .tok { font-size: 10.5px; }
 .turn .err { grid-column: 1 / -1; color: #e06c6c; font-size: 12px; }
 @media (max-width: 760px) { .turn .cols { grid-template-columns: 1fr !important; } }
 
-#c-form { display: block; margin: 0; padding: 12px 16px 14px; border-top: 1px solid var(--border); background: rgba(255,255,255,0.015); }
-.c-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+#c-form { display: block; margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--border); background: rgba(255,255,255,0.015); }
+.c-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .c-bar #c-save { margin-left: auto; }
-#steer-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 10px 12px; margin-bottom: 10px; }
+#steer-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 10px 12px; margin-bottom: 8px; }
 .c-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .c-title { font: 600 12.5px var(--font); cursor: help; }
 .c-head #c-reset { margin-left: auto; }
+#c-sum { display: none; flex: 1; min-width: 0; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#steer-panel.folded { padding: 6px 12px; }
+#steer-panel.folded .c-head { margin-bottom: 0; }
+#steer-panel.folded #c-sum { display: block; }
+#steer-panel.folded #c-mode, #steer-panel.folded #c-reset, #steer-panel.folded #c-stack,
+#steer-panel.folded .c-addrow, #steer-panel.folded .c-showrow { display: none; }
+#steer-panel.folded #c-fold { color: var(--link); }
 #c-stack { display: grid; gap: 4px; }
 .srow { display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(150px, 2.2fr) 64px 28px; align-items: center; gap: 10px; padding: 3px 0; }
 .srow .sid { font-size: 12.5px; color: var(--ink); padding: 2px 6px; margin-left: -6px; border-radius: var(--r-sm); }
