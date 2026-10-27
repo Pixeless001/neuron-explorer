@@ -57,9 +57,7 @@ function tokText(list, max = Infinity, sep = "  ") {
 }
 
 let agentSelecting = false, agentMarked = false;  // Claude's selections and marks (see agentUi); declared early, openNeuron reads them on load
-const state = { layer: null, units: {}, unitMap: {}, focus: null, view: "map", chat: { mode: "add", dir: "writes", dose: { add: 0.8, mul: 2 } } };
-const ADD_STEPS = [...Array.from({ length: 30 }, (_, i) => +((i + 1) * 0.05).toFixed(2)), 1.75, 2, 2.5, 3, 4, 5];
-const MUL_STEPS = [...Array.from({ length: 9 }, (_, i) => i * 0.5), 5, 6, 8, 12, 16];
+const state = { layer: null, units: {}, unitMap: {}, focus: null, view: "map" };
 
 const index = await api("/api/index");
 const arch = index.arch;
@@ -295,7 +293,7 @@ state.qMode = "lens";
 document.querySelectorAll("#q-mode button").forEach(b => b.onclick = e => {
   state.qMode = b.dataset.q;
   document.querySelectorAll("#q-mode button").forEach(x => x.classList.toggle("on", x === b));
-  $("#lens-q").placeholder = state.qMode === "fires" ? "text: golden gate bridge" : "search lens";
+  $("#lens-q").placeholder = state.qMode === "fires" ? "Run text, e.g. golden gate bridge" : "Search lens tokens…";
   if (e.isTrusted) {
     showLeft(state.qMode === "fires" ? "run" : "net");
     if (state.qMode === "fires" && document.activeElement !== $("#inf-text")) $("#inf-text").focus();
@@ -526,8 +524,12 @@ function setTokPrefs(p) {
 document.querySelectorAll("#tok-junk button").forEach(b => b.onclick = () => setTokPrefs({ junk: b.dataset.j }));
 $("#tok-group").onclick = () => setTokPrefs({ group: !tokPrefs.group });
 syncTokPrefs();
-try { if (localStorage.getItem("legendHidden")) $("#legend").remove(); } catch {}
-$("#legend-x")?.addEventListener("click", () => { $("#legend").remove(); try { localStorage.setItem("legendHidden", "1"); } catch {} });
+try { $("#legend").open = localStorage.getItem("legendOpen") !== "0"; } catch { $("#legend").open = true; }
+$("#legend").addEventListener("toggle", () => { try { localStorage.setItem("legendOpen", $("#legend").open ? "1" : "0"); } catch {} });
+$("#map-home").onclick = () => { if (map.layerMode !== null) map.exitLayer(); map.home(); };
+addEventListener("click", e => { const m = $("#view-menu"); if (m.open && !m.contains(e.target)) m.open = false; });
+addEventListener("keydown", e => { if (e.key === "Escape") $("#view-menu").open = false; });
+$("#inf-hi").value = arch.n_layers - 1;
 
 // a head chip marks its head on the map while hovered
 $("#net").addEventListener("mouseover", e => { const c = e.target.closest(".chip[data-h]"); map.hoverHead(c ? +c.dataset.l : null, c ? +c.dataset.h : null); });
@@ -630,8 +632,8 @@ function markFresh(t) { if (curTab() !== t) tabBtn(t).classList.add("fresh"); }
 // neuron tabs show while a neuron is open (Chat for real neurons only); Claude always
 function syncTabs() {
   const f = state.focus?.kind === "head" ? null : state.focus;
-  for (const t of ["examples", "details"]) tabBtn(t).style.display = f ? "" : "none";
-  tabBtn("chat").style.display = f && f.kind === "neuron" ? "" : "none";
+  for (const t of ["examples", "details"]) tabBtn(t).style.display = f && (t !== "examples" || state.hasRollouts !== false) ? "" : "none";
+  tabBtn("chat").style.display = (f && f.kind === "neuron") || state.steer?.neurons.length ? "" : "none";
   if (tabBtn(curTab()).style.display === "none") setTab(f ? "examples" : "claude");
 }
 function openClaude() {
@@ -641,8 +643,8 @@ function openClaude() {
 async function openNeuron(layer, n, kind = "neuron", push = true, fly = true) {
   if (!agentSelecting) clearAgentMarks();
   flushName();
-  if (running) running.abort();
   state.focus = { layer, n, kind };
+  if (followFocus(state.focus)) { if (running) running.abort(); state.thread = []; renderThread(); } else renderStack();
   map.selectHead(null); state.headInfo = null; state.nheads = null; $("#f-name").style.display = ""; lightHeads(state.inf.pos);
   if (map.layerMode !== null && map.layerMode !== layer) map.enterLayer(layer);
   if (push && kind === "neuron") saveFocus();
@@ -652,8 +654,8 @@ async function openNeuron(layer, n, kind = "neuron", push = true, fly = true) {
   $("#f-rank").textContent = "";
   setNameField(state.unitMap[layer]?.get(n)?.name || "");
   $("#f-name").disabled = kind !== "neuron";
-  $("#tab-examples").innerHTML = ""; $("#tab-details").innerHTML = "";
-  state.thread = []; renderThread(); $("#c-reads").innerHTML = ""; $("#c-lens").innerHTML = "";
+  $("#tab-examples").innerHTML = ""; $("#tab-details").innerHTML = ""; state.hasRollouts = null;
+  $("#c-reads").innerHTML = ""; $("#c-lens").innerHTML = "";
   syncTabs();
   if (layer !== state.layer) await setLayer(layer);
   if (!isFocus(layer, n, kind)) return;
@@ -667,7 +669,7 @@ async function openNeuron(layer, n, kind = "neuron", push = true, fly = true) {
   if (u.stats) $("#f-rank").textContent = `#${u.rank ?? "—"}/${u.n_ranked}  mass ${(u.stats.mass ?? u.stats.z).toFixed(1)}  null ${(u.stats.null_pct * 100).toFixed(0)}%`;
   renderExamples(u);
   renderDetails(u);
-  const hasRollouts = !!(u.rollouts && u.rollouts.length);
+  const hasRollouts = state.hasRollouts = !!(u.rollouts && u.rollouts.length);
   document.querySelector('#tabs button[data-tab="examples"]').style.display = hasRollouts ? "" : "none";
   if (!hasRollouts && document.querySelector("#tabs button.on")?.dataset.tab === "examples") setTab("details");
   if (kind === "neuron") loadLive(layer, n);
@@ -689,7 +691,6 @@ async function loadNeuronHeads(layer, n) {
 async function openHead(layer, head) {
   if (!agentSelecting) clearAgentMarks();
   flushName();
-  if (running) running.abort();
   state.focus = { layer, n: head, kind: "head" };
   saveFocus();
   map.select(null); scatter.select(null, null); map.selectHead(layer, head);
@@ -851,73 +852,136 @@ $("#f-name").addEventListener("input", () => {
   nameTimer = setTimeout(flushName, 500);
 });
 
-// ---------- chat ----------
-const doseEl = $("#c-dose");
-function showDose() { doseEl.value = state.chat.mode === "mul" ? `×${state.chat.dose.mul}` : state.chat.dose.add; }
-doseEl.addEventListener("change", () => {
-  const v = parseFloat(doseEl.value.replace(/[×x*]/g, ""));
-  if (Number.isFinite(v) && v >= 0) state.chat.dose[state.chat.mode] = v;
-  showDose();
+// ---------- chat: a stack of neurons steered together ----------
+// row 0 pushes every neuron by its dose, row 1 is left alone, row 2 reverses each push (add: -dose, ×: ×-dose)
+const DOSE = { add: { min: -2, max: 2, step: 0.05, def: 0.8 }, mul: { min: 0, max: 16, step: 0.5, def: 2 } };
+// auto: the stack still just follows the open neuron; adding a neuron or loading a variant takes it over
+state.steer = { mode: "add", neurons: [], auto: true, show: [true, true, true], dir: "writes" };
+const nid = x => `L${x.layer} N${x.n}`;
+const unitName = x => state.unitMap[x.layer]?.get(x.n)?.name || "";
+const fmtStep = (d, mode) => mode === "mul" ? `×${d}` : (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
+const recipe = (neurons, mode) => neurons.map(x => `${nid(x)} ${fmtStep(x.dose, mode)}`).join(" · ") + (mode === "mul" ? " · ×" : " · add");
+
+// opening a neuron moves an auto stack onto it; returns whether the stack changed (the thread then starts over)
+function followFocus(f) {
+  const S = state.steer;
+  if (!S.auto || f?.kind !== "neuron") return false;
+  const cur = S.neurons[0];
+  if (cur && cur.layer === f.layer && cur.n === f.n && S.neurons.length === 1) return false;
+  S.neurons = [{ layer: f.layer, n: f.n, dose: cur?.dose ?? DOSE[S.mode].def }];
+  renderStack();
+  return true;
+}
+function renderStack() {
+  const S = state.steer, R = DOSE[S.mode];
+  $("#c-stack").innerHTML = S.neurons.map((x, i) => `<div class="srow" data-i="${i}">
+      <button type="button" class="sid mono" data-go="${i}" title="open ${nid(x)}">${nid(x)}</button>
+      <span class="snm" title="${esc(unitName(x))}">${esc(unitName(x))}</span>
+      <input type="range" min="${R.min}" max="${R.max}" step="${R.step}" value="${x.dose}" aria-label="dose for ${nid(x)}">
+      <input class="sdose mono" value="${fmtStep(x.dose, S.mode)}" inputmode="decimal" aria-label="dose for ${nid(x)}">
+      <button type="button" class="srm" data-rm="${i}" aria-label="remove ${nid(x)}" title="remove">×</button></div>`).join("")
+    || `<div class="sempty">No neurons to steer. Open one on the map, or add one below.</div>`;
+  const f = state.focus, open = f?.kind === "neuron" && !S.neurons.some(x => x.layer === f.layer && x.n === f.n);
+  $("#c-add-open").hidden = !open;
+  if (open) $("#c-add-open").textContent = `+ add open ${nid(f)}`;
+  document.querySelectorAll("#c-mode button").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
+  document.querySelectorAll("#c-show button").forEach(b => b.classList.toggle("on", S.show[+b.dataset.r]));
+  $("#v-current").textContent = S.neurons.length ? `Current: ${recipe(S.neurons, S.mode)}` : "Nothing to save yet: set up steering in Chat first.";
+}
+function addToStack(layer, n, dose) {
+  const S = state.steer;
+  if (!(layer >= 0 && layer < arch.n_layers && n >= 0 && n < arch.inter)) return false;
+  S.auto = false;
+  if (!S.neurons.some(x => x.layer === layer && x.n === n)) S.neurons.push({ layer, n, dose: dose ?? DOSE[S.mode].def });
+  renderStack(); syncTabs();
+  return true;
+}
+const setDose = (i, v) => {
+  const R = DOSE[state.steer.mode];
+  state.steer.neurons[i].dose = +Math.min(R.max, Math.max(R.min, v)).toFixed(2);
+};
+$("#c-stack").addEventListener("input", e => {
+  if (e.target.type !== "range") return;
+  const row = e.target.closest(".srow"), i = +row.dataset.i;
+  setDose(i, +e.target.value);
+  row.querySelector(".sdose").value = fmtStep(state.steer.neurons[i].dose, state.steer.mode);
 });
+$("#c-stack").addEventListener("change", e => {
+  if (!e.target.classList.contains("sdose")) return;
+  const i = +e.target.closest(".srow").dataset.i, v = parseFloat(e.target.value.replace(/[×x*+\s]/g, "").replace("−", "-"));
+  if (Number.isFinite(v)) setDose(i, v);
+  renderStack();
+});
+$("#c-stack").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList.contains("sdose")) { e.preventDefault(); e.target.blur(); } });
+$("#c-stack").addEventListener("click", e => {
+  const rm = e.target.closest("[data-rm]"), go = e.target.closest("[data-go]");
+  if (rm) { state.steer.auto = false; state.steer.neurons.splice(+rm.dataset.rm, 1); renderStack(); syncTabs(); }
+  else if (go) { const x = state.steer.neurons[+go.dataset.go]; goToNeuron(x.layer, x.n); }
+});
+$("#c-add").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const m = e.target.value.match(/L?\s*(\d+)\s*[\s,/·]\s*N?\s*(\d+)/i);
+  if (m && addToStack(+m[1], +m[2])) e.target.value = "";
+  else { e.target.classList.add("bad"); setTimeout(() => e.target.classList.remove("bad"), 900); }
+});
+$("#c-add-open").onclick = () => addToStack(state.focus.layer, state.focus.n);
+$("#c-reset").onclick = () => { state.steer.auto = true; state.steer.neurons = []; followFocus(state.focus); renderStack(); syncTabs(); };
 document.querySelectorAll("#c-mode button").forEach(b => b.onclick = () => {
-  state.chat.mode = b.dataset.m;
-  document.querySelectorAll("#c-mode button").forEach(x => x.classList.toggle("on", x === b)); showDose();
+  const S = state.steer; if (S.mode === b.dataset.m) return;
+  S.mode = b.dataset.m; S.neurons.forEach(x => x.dose = DOSE[S.mode].def);  // doses don't carry over between add and ×
+  renderStack();
+});
+document.querySelectorAll("#c-show button").forEach(b => b.onclick = () => {
+  const s = state.steer.show, r = +b.dataset.r;
+  if (s[r] && s.filter(Boolean).length === 1) return;  // keep at least one column
+  s[r] = !s[r]; renderStack(); renderThread();
 });
 document.querySelectorAll("#c-dir button").forEach(b => b.onclick = () => {
-  state.chat.dir = b.dataset.d;
+  state.steer.dir = b.dataset.d;
   document.querySelectorAll("#c-dir button").forEach(x => x.classList.toggle("on", x === b));
   $("#tab-chat").classList.toggle("reads", b.dataset.d === "reads");
-  $("#c-input").placeholder = b.dataset.d === "reads" ? "text to read" : "Who are you?";
+  $("#c-input").placeholder = b.dataset.d === "reads" ? "Text to read" : "Who are you?";
 });
-function step(dir) {
-  const steps = state.chat.mode === "mul" ? MUL_STEPS : ADD_STEPS, key = state.chat.mode;
-  // step to the next value in the ladder above or below the current dose (typed values land between steps)
-  const v = state.chat.dose[key];
-  const next = dir > 0 ? steps.find(x => x > v + 1e-9) : [...steps].reverse().find(x => x < v - 1e-9);
-  if (next !== undefined) state.chat.dose[key] = next;
-  showDose();
-}
-$("#c-minus").onclick = () => step(-1); $("#c-plus").onclick = () => step(1);
-showDose();
 
 let running = null;
 state.thread = [];
-const ROWS = ["up", "zero", "down"];
-const COL_NAMES = ["steered +", "normal", "steered −"];
-function turnLabels(t) {
-  return t.mode === "mul" ? [`×${t.dose}`, "×1", `×−${t.dose}`] : [`+${t.dose}`, "0", `−${t.dose}`];
+const ROWS = ["up", "zero", "down"], COL_NAMES = ["Steered +", "Normal", "Steered −"];
+function colDose(t, r) {
+  if (r === 1) return t.mode === "mul" ? "×1" : "0";
+  if (t.neurons.length > 1) return r === 0 ? "as set" : "reversed";
+  const d = t.neurons[0].dose;
+  return fmtStep(r === 0 ? d : -d, t.mode);
 }
-// each run: which neuron and dose, the shared prompt, then the three replies side by side (the label stays each
+// each run: which neurons at which doses, the shared prompt, then the replies side by side (the label stays each
 // column's first child; streamed text is appended after it)
 function renderThread() {
-  const el = $("#c-thread");
-  el.innerHTML = state.thread.map((t, i) => `<div class="turn" data-i="${i}">
-    <div class="run-head mono">${t.layer != null ? `L${t.layer} N${t.n}${t.name ? ` · <span class="nm">${esc(t.name)}</span>` : ""} · ` : ""}${t.mode === "mul" ? `× ${t.dose}` : `add ±${t.dose}`}</div>
+  const el = $("#c-thread"), show = state.steer.show;
+  el.innerHTML = state.thread.length ? state.thread.map((t, i) => `<div class="turn" data-i="${i}">
+    <div class="run-head"><span class="mono">${esc(recipe(t.neurons, t.mode))}</span>${t.neurons.length === 1 && unitName(t.neurons[0]) ? ` <span class="nm">${esc(unitName(t.neurons[0]))}</span>` : ""}</div>
     <div class="user">${esc(t.user)}</div>
-    <div class="cols">${ROWS.map((c, r) => `<div class="col ${c}${t.live && !t.done[r] ? " live" : ""}"><span class="lab">${COL_NAMES[r]} <b>${turnLabels(t)[r]}</b></span>${esc(t.replies[r])}</div>`).join("")}
-    ${t.error ? `<div class="err">${esc(t.error)}</div>` : ""}</div></div>`).join("");
-  el.scrollTop = el.scrollHeight;
+    <div class="cols" style="grid-template-columns: repeat(${show.filter(Boolean).length}, minmax(0, 1fr))">${ROWS.map((c, r) => `<div class="col ${c}${t.live && !t.done[r] ? " live" : ""}"${show[r] ? "" : " hidden"}><span class="lab">${COL_NAMES[r]} <b>${colDose(t, r)}</b></span>${esc(t.replies[r])}</div>`).join("")}
+    ${t.error ? `<div class="err">${esc(t.error)}</div>` : ""}</div></div>`).join("")
+    : `<div class="c-empty dim">Type a prompt and press Run. Each run shows the reply with the steering, without it, and with it reversed.</div>`;
 }
+// a new run scrolls to its top, so its header and the start of all three replies are in view while they stream
+const showLastTurn = () => { const t = $("#c-thread").lastElementChild; if (t) $("#c-thread").scrollTop = t.offsetTop - 14; };
 $("#c-clear").onclick = () => { if (running) running.abort(); state.thread = []; renderThread(); };
 let reading = false;
 
-$("#c-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  if (running) { running.abort(); return; }
-  const f = state.focus; if (!f) return;
-  const text = $("#c-input").value.trim() || $("#c-input").placeholder;
-  if (state.chat.dir === "reads") return runReads(f, text);
-  const dose = state.chat.mode === "mul" ? state.chat.dose.mul : state.chat.dose.add;
+async function runSteer(text) {
+  const S = state.steer;
+  if (!S.neurons.length) { $("#c-add").focus(); return; }
+  const neurons = S.neurons.map(x => ({ layer: x.layer, n: x.n, dose: x.dose }));
   const history = state.thread.filter(t => !t.error).map(t => ({ user: t.user, replies: t.replies }));
-  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], dose, mode: state.chat.mode, live: true,
-    layer: f.layer, n: f.n, name: f.kind === "neuron" ? $("#f-name").value.trim() : "" };
-  state.thread.push(turn); $("#c-input").value = ""; renderThread();
+  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], mode: S.mode, neurons, live: true };
+  state.thread.push(turn); $("#c-input").value = ""; renderThread(); showLastTurn();
   const cols = [...$("#c-thread").lastElementChild.querySelectorAll(".col")];
   const ctl = new AbortController(), thread = state.thread;
-  running = ctl; $("#c-go").textContent = "stop";
+  running = ctl; $("#c-go").textContent = "Stop"; $("#c-go").classList.add("stop");
   try {
     const res = await fetch("/api/steer", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
-      body: JSON.stringify({ layer: f.layer, n: f.n, prompt: text, dose, mode: state.chat.mode, history }) });
+      body: JSON.stringify({ neurons, mode: S.mode, prompt: text, history }) });
     if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 160)}`);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = "";
@@ -933,17 +997,75 @@ $("#c-form").addEventListener("submit", async e => {
         if (ev.row == null) continue;
         turn.replies[ev.row] += ev.t;
         cols[ev.row].lastChild.nodeType === 3 ? (cols[ev.row].lastChild.textContent += ev.t) : cols[ev.row].append(ev.t);
-        const th = $("#c-thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 80) th.scrollTop = th.scrollHeight;
       }
     }
   } catch (err) {
     if (err.name !== "AbortError") turn.error = String(err);
   } finally {
     turn.live = false; turn.done = [true, true, true];
-    if (running === ctl) { running = null; $("#c-go").textContent = "run"; }
-    if (state.thread === thread) renderThread();
+    if (running === ctl) { running = null; $("#c-go").textContent = "Run"; $("#c-go").classList.remove("stop"); }
+    if (state.thread === thread) { const top = $("#c-thread").scrollTop; renderThread(); $("#c-thread").scrollTop = top; }
+  }
+}
+$("#c-form").addEventListener("submit", e => {
+  e.preventDefault();
+  if (running) { running.abort(); return; }
+  const text = $("#c-input").value.trim() || $("#c-input").placeholder;
+  if (state.steer.dir === "reads") { const f = state.focus; if (f?.kind === "neuron") runReads(f, text); return; }
+  runSteer(text);
+});
+
+// ---------- variants: saved steer setups, kept per model on the server ----------
+let variants = [];
+const saveVariants = () => api("/api/variants", variants);
+function renderVariants() {
+  $("#v-list").innerHTML = variants.length ? variants.map((v, i) => `<li class="vrow" data-i="${i}">
+      <div class="vmain"><span class="vname">${esc(v.name)}</span><span class="vrecipe mono">${esc(recipe(v.neurons, v.mode))}</span>${v.prompt ? `<span class="vprompt">“${esc(v.prompt)}”</span>` : ""}</div>
+      <div class="vact"><button type="button" data-a="run" class="primary" title="load it and run its prompt in Chat">Run</button><button type="button" data-a="load" title="load it into the Chat steering">Load</button><button type="button" data-a="rename">Rename</button><button type="button" data-a="delete">Delete</button></div></li>`).join("")
+    : `<li class="v-empty dim">No saved variants yet. Set up steering in Chat (one or more neurons and their doses), then name and save it here to load or rerun it later.</li>`;
+}
+function loadVariant(v) {
+  const S = state.steer;
+  S.auto = false; S.mode = v.mode; S.neurons = v.neurons.map(x => ({ ...x }));
+  if (v.prompt) $("#c-input").value = v.prompt;
+  if (S.dir === "reads") $('#c-dir button[data-d="writes"]').click();
+  state.thread = []; renderThread(); renderStack();
+  focusEl.classList.add("on"); syncTabs(); setTab("chat");
+}
+$("#v-save").addEventListener("submit", async e => {
+  e.preventDefault();
+  const S = state.steer, name = $("#v-name").value.trim();
+  if (!S.neurons.length) return;
+  if (!name) { $("#v-name").focus(); return; }
+  const prompt = $("#c-input").value.trim() || state.thread.at(-1)?.user || "";
+  variants.unshift({ id: crypto.randomUUID(), name, mode: S.mode, neurons: S.neurons.map(x => ({ layer: x.layer, n: x.n, dose: x.dose })), prompt });
+  $("#v-name").value = ""; renderVariants(); await saveVariants();
+});
+$("#v-list").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const li = b.closest(".vrow"), v = variants[+li.dataset.i];
+  if (b.dataset.a === "load") loadVariant(v);
+  else if (b.dataset.a === "run") { loadVariant(v); runSteer(v.prompt || $("#c-input").placeholder); }
+  else if (b.dataset.a === "rename") {
+    li.querySelector(".vname").outerHTML = `<input class="vname-edit" value="${esc(v.name)}" aria-label="new name">`;
+    const inp = li.querySelector(".vname-edit"); inp.focus(); inp.select();
+    let finished = false;
+    const done = async ok => { if (finished) return; finished = true; if (ok && inp.value.trim()) { v.name = inp.value.trim(); await saveVariants(); } renderVariants(); };
+    inp.addEventListener("keydown", ev => { if (ev.key === "Enter") done(true); if (ev.key === "Escape") done(false); });
+    inp.addEventListener("blur", () => done(true));
+  } else if (b.dataset.a === "delete") {
+    if (!b.classList.contains("confirm")) {  // two clicks: the first arms it for a few seconds
+      b.classList.add("confirm"); b.textContent = "Delete?";
+      setTimeout(() => { if (b.isConnected) { b.classList.remove("confirm"); b.textContent = "Delete"; } }, 2500);
+      return;
+    }
+    variants.splice(+li.dataset.i, 1); renderVariants(); await saveVariants();
   }
 });
+$("#c-save").onclick = () => { focusEl.classList.add("on"); syncTabs(); setTab("variants"); $("#v-name").focus(); };
+
+renderStack(); renderThread();
+api("/api/variants").then(v => { variants = v; renderVariants(); });
 
 async function runReads(f, text) {
   if (reading) return;
@@ -951,7 +1073,7 @@ async function runReads(f, text) {
   let r;
   try { r = await api("/api/reads", { layer: f.layer, n: f.n, text, chat: true }); }
   catch (err) { $("#c-reads").textContent = err.message; return; }
-  finally { reading = false; $("#c-go").textContent = "run"; }
+  finally { reading = false; $("#c-go").textContent = "Run"; }
   if (!isFocus(f.layer, f.n, "neuron")) return;
   const m = Math.max(1e-6, ...r.units.map(u => Math.abs(u.act)));
   $("#c-reads").innerHTML = r.units.map(u => {
