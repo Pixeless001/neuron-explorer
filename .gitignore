@@ -27,3 +27,4 @@ explorer/cache/head_profiles.json
 
 # experiment scripts
 scripts/
+explorer/cache_4b/connections.sqlite
