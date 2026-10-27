@@ -15,13 +15,13 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from transformers import AutoConfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "sweep"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rank import compute_units  # noqa: E402
-from runtime import CACHE, MODEL, NO_MODEL, Runtime  # noqa: E402
+from runtime import CACHE, MODEL, NO_MODEL, Runtime  # noqa: E402  (first: it may switch the Hub offline)
+from transformers import AutoConfig  # noqa: E402
 
 RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 NAMES = os.path.join(CACHE, "names.json")  # per model: neuron indices mean nothing across models
@@ -1843,6 +1843,12 @@ async def _start_reaper():
 @app.get("/api/status")
 def status():
     return {"status": rt.status}
+
+
+@app.get("/chat")
+def chat_page():
+    """The steering chat, variants and Claude, full screen; live-linked to the explorer page in the browser."""
+    return FileResponse(os.path.join(ROOT, "explorer", "static", "chat.html"), headers={"Cache-Control": "no-store"})
 
 
 app.mount("/", StaticFiles(directory=os.path.join(ROOT, "explorer", "static"), html=True), name="static")

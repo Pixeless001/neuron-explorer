@@ -423,3 +423,27 @@ body.list-hidden #embed-bar { left: 56px; }
   #embed-bar { left: 10px; top: auto; bottom: 10px; }
   #jump, #view-menu { display: none; }
 }
+
+/* links between the explorer and the chat page */
+.hbtn { color: var(--dim); font-size: 13px; padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); text-decoration: none; white-space: nowrap; }
+.hbtn:hover { color: var(--ink); }
+
+/* the chat page: steering chat / variants and Claude side by side, full height */
+.chat-page header { gap: 14px; }
+#ch-focus { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#ch-focus b { color: var(--ink); font-weight: 600; margin: 0 4px; }
+.chat-main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 10px; padding: 10px; }
+.pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); }
+.pane-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.pane-tabs button[data-pane] { color: var(--dim); font-size: 13px; padding: 5px 10px; border-radius: var(--r); }
+.pane-tabs button[data-pane]:hover { color: var(--ink); background: var(--raise); }
+.pane-tabs button[data-pane].on { color: var(--ink); background: var(--surface-2); }
+.pane-title { font-weight: 600; font-size: 13px; padding: 5px 6px; }
+.pane-tabs #a-agent { margin-left: auto; font-size: 12px; padding: 3px 6px; }
+.pane-tabs #a-past, .pane-tabs #a-new { font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); }
+.pane-tabs #a-past:hover, .pane-tabs #a-new:hover { color: var(--ink); background: var(--raise); }
+.pane-tabs #a-past.on { color: var(--ink); background: var(--surface-2); }
+.pane .tab.on { flex: 1; min-height: 0; }
+#pane-steer #tab-variants.on { overflow-y: auto; }
+.chat-page .turn .col .lab { background: #0d0f12; }
+@media (max-width: 1000px) { .chat-main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); } }
