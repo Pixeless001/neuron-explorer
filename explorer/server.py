@@ -312,7 +312,7 @@ async def steer(req: Request):
             # neurons: [{layer, n, dose}] steered together (or one neuron as layer, n, dose); row 2 reverses each
             mode = b.get("mode", "add")
             pushes = [(int(x["layer"]), int(x["n"]), float(x["dose"]), mode) for x in b.get("neurons") or [b]]
-            for row, delta in rt.steer_multi(pushes, rows, min(4000, int(b.get("max_new", 600))), cancel, signs):
+            for row, delta in rt.steer_multi(pushes, rows, min(32768, int(b.get("max_new", 600))), cancel, signs):
                 ev = {"row": col[signs[row]], "t": delta} if row is not None else {"row": None, "cut": [col[signs[r]] for r in delta]}
                 loop.call_soon_threadsafe(q.put_nowait, ev)
         except Exception as e:  # surfaced in the UI next to the chat

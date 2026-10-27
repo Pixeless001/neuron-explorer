@@ -23,7 +23,7 @@
       <form id="c-form">
         <div class="c-bar">
           <span class="seg" id="c-dir"><button type="button" data-d="writes" class="on" title="steer the model with the neurons below and compare replies">Steer</button><button type="button" data-d="reads" title="show the open neuron's activation on each token of your text">Read activations</button></span>
-          <label class="c-max" title="the longest reply, in tokens; steered replies often repeat until they reach it (about 5 tokens a second on this CPU)">Length <select id="c-max"><option>150</option><option>300</option><option>600</option><option>1200</option><option>2400</option></select></label>
+          <label class="c-max" title="the longest reply, in tokens; steered replies often repeat until they reach it. About 5 tokens a second on this CPU: 600 ≈ 2 min, 2400 ≈ 8 min, 9600 ≈ 32 min. Stop ends a run early.">Length <select id="c-max"><option>150</option><option>300</option><option>600</option><option>1200</option><option>2400</option><option>4800</option><option>9600</option><option value="32768">32k (until it ends)</option></select></label>
           <span class="toggles"><button type="button" id="c-compare" title="also generate the reply without the steering and with the steering reversed, side by side">Compare</button></span>
           <button type="button" id="c-save" class="ghost" title="save this steering setup to Variants">Save as variant</button>
           <button type="button" id="c-clear" class="ghost">Clear chat</button>
