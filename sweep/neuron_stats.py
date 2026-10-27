@@ -70,15 +70,16 @@ class RegimeStats:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--layers", default="22", help="comma-separated decoder layer indices")
     ap.add_argument("--tokens", type=int, default=2_000_000)
     ap.add_argument("--seq-len", type=int, default=1024)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="stats/q35-4b")
+    ap.add_argument("--out", default=None, help="file prefix; default stats/q35-<size> from --model")
     a = ap.parse_args()
     layers = [int(x) for x in a.layers.split(",")]
+    a.out = a.out or "stats/q35-" + a.model.rsplit("-", 1)[-1].lower()
 
     tok = AutoTokenizer.from_pretrained(a.model)
     model = AutoModelForImageTextToText.from_pretrained(a.model, dtype=torch.bfloat16, device_map="cuda").eval()

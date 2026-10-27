@@ -16,7 +16,8 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
 from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
 
-MODEL = os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-4B")
+MODEL = os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B")
+STATS_TAG = "q35-" + MODEL.rsplit("-", 1)[-1].lower()  # stats file prefix: q35-0.8b, q35-4b
 NO_MODEL = bool(os.environ.get("EXPLORER_NO_MODEL"))  # cache-only: never download or load weights
 REFERENCE_TEXT = (
     "The history of the region is long and varied. Farmers settled the river valley first, then traders arrived, "
@@ -26,7 +27,9 @@ REFERENCE_TEXT = (
 )
 
 
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+# relative to the repo root; explorer/cache_4b holds the Qwen3.5-4B caches
+CACHE = os.path.normpath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                      os.environ.get("EXPLORER_CACHE", os.path.join("explorer", "cache"))))
 
 
 def _locked(f):
@@ -76,13 +79,14 @@ class Runtime:
             self.status = "loading"
             dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
             self.tok = AutoTokenizer.from_pretrained(MODEL)
-            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16).to(dev).eval()
+            dtype = torch.float32 if dev == "cpu" else torch.bfloat16  # CPUs without AMX run bf16 matmuls slowly
+            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=dtype).to(dev).eval()
             self.dev, self.model, self.lm = dev, m, m.model.language_model
             for i, layer in enumerate(self.lm.layers):
                 layer.mlp.down_proj.register_forward_pre_hook(self._hook(i))
                 layer.register_forward_hook(self._resid_hook(i))
-                # attention output projection: its input is the heads side by side (full attention: o_proj, 16 x 256
-                # after the output gate; linear attention: out_proj, 32 value heads x 128 after the gated norm)
+                # attention output projection: its input is the heads side by side (full attention: o_proj, heads x
+                # head_dim after the output gate; linear attention: out_proj, value heads x head_v_dim after the gated norm)
                 if hasattr(layer, "self_attn"):
                     a = layer.self_attn
                     a.o_proj.register_forward_pre_hook(self._head_hook(i, a.o_proj.in_features // a.head_dim))
@@ -550,7 +554,7 @@ class Runtime:
     def layer_resid_p50(self, layer):
         if layer in self.resid_p50:
             return self.resid_p50[layer]
-        path = os.path.join(self.stats_dir, f"q35-4b_L{layer}.npz")
+        path = os.path.join(self.stats_dir, f"{STATS_TAG}_L{layer}.npz")
         if os.path.exists(path):
             v = float(np.load(path)["resid_norm_q10_50_90"][1])
         else:

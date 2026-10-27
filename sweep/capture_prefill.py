@@ -24,7 +24,7 @@ class Stop(Exception):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+")
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seed", type=int, default=0, help="the sweep's --seed (random-control directions)")
     ap.add_argument("--out-dir", default="captures")

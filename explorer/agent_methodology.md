@@ -1,4 +1,6 @@
-# Interpreting neurons in Qwen3.5-4B: methodology
+# Interpreting neurons: methodology
+
+The neurons named below are from Qwen3.5-4B; in another model the same indices are different neurons.
 
 A working method for explaining a single MLP neuron, built from hands-on investigation in the explorer. It complements the explorer prompt above and uses its vocabulary (poles, steer lens, cone, web summary).
 

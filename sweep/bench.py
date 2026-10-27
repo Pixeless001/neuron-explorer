@@ -4,6 +4,7 @@ unsteered, a distinct steering config per request, and steering plus a last_prom
     uv run python sweep/bench.py --stats stats/q35-4b_L22.npz --n 1280 --max-num-seqs 320
 """
 import argparse
+import os
 import time
 
 import numpy as np
@@ -14,7 +15,7 @@ from vllm.inputs import TokensPrompt
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--stats", required=True)
     ap.add_argument("--n", type=int, default=1280)
     ap.add_argument("--tokens", type=int, default=256)

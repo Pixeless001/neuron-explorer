@@ -4,7 +4,7 @@
 # stopped pod restarts ready. The fork's additions are Python + Triton, so it installs on top of the upstream wheel
 # built at the commit the fork last merged (755492e3). Run from /workspace/neuron-explorer.
 set -euo pipefail
-MODEL="${MODEL:-Qwen/Qwen3.5-4B}"
+MODEL="${MODEL:-Qwen/Qwen3.5-0.8B}"
 
 cat > /workspace/env.sh <<'EOF'
 export HF_HOME=/workspace/hf UV_CACHE_DIR=/workspace/.uv-cache UV_PYTHON_INSTALL_DIR=/workspace/.uv-python

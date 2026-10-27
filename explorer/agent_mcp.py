@@ -10,9 +10,12 @@ import urllib.request
 
 URL = os.environ.get("EXPLORER_URL", "http://127.0.0.1:8791")
 CHAT = os.environ.get("EXPLORER_CHAT", "")
+with urllib.request.urlopen(f"{URL}/api/index", timeout=30) as _r:  # the explorer's own model, for the ranges below
+    ARCH = json.load(_r)["arch"]
 
-LN = {"layer": {"type": "integer", "description": "layer, 0-31"}, "n": {"type": "integer", "description": "neuron, 0-9215"}}
-HEAD = {"layer": {"type": "integer", "description": "layer, 0-31"}, "head": {"type": "integer", "description": "head: 0-15 on full-attention layers, 0-31 on linear-attention layers"}}
+LAYER = {"type": "integer", "description": f"layer, 0-{ARCH['n_layers'] - 1}"}
+LN = {"layer": LAYER, "n": {"type": "integer", "description": f"neuron, 0-{ARCH['inter'] - 1}"}}
+HEAD = {"layer": LAYER, "head": {"type": "integer", "description": f"head: 0-{ARCH['attn_heads'] - 1} on full-attention layers, 0-{ARCH['linear_v_heads'] - 1} on linear-attention layers"}}
 TOOLS = [
     {"name": "overview", "description": "Model architecture and which layers have sweep runs (rollouts and rankings).",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -71,8 +74,8 @@ TOOLS = [
      "it as a user turn). Compare against act_range from `neuron`. Optional `neurons` [{layer, n, dose?, mode?}] are "
      "pushed during the same pass (steering units), to test causally whether they drive this neuron: compare with the "
      "same call without them. {layer, all: true, dose: 0} zeroes that layer's whole MLP. Optional `heads` [{layer, "
-     "head, dose}] scale attention heads (dose 0 = ablate; head 'all' = every head; full-attention layers have 16 heads, "
-     "linear-attention layers 32 value heads; layer types are in `overview`). Only earlier layers can move it. Needs "
+     "head, dose}] scale attention heads (dose 0 = ablate; head 'all' = every head; full-attention layers have "
+     f"{ARCH['attn_heads']} heads, linear-attention layers {ARCH['linear_v_heads']} value heads; layer types are in `overview`). Only earlier layers can move it. Needs "
      "the live model; errors if it is off.",
      "inputSchema": {"type": "object", "properties": {**LN, "text": {"type": "string"},
                                                        "chat": {"type": "boolean", "default": False},

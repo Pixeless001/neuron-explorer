@@ -17,7 +17,7 @@ from huggingface_hub import snapshot_download
 from safetensors import safe_open
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
 ap.add_argument("--kind", default="writes", choices=["writes", "reads"])
 ap.add_argument("--pca", type=int, default=50)
 ap.add_argument("--neighbors", type=int, default=30)

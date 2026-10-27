@@ -86,7 +86,7 @@ def rollout_record(out, job, layer, top_k):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--stats", required=True, help="npz from neuron_stats.py for the layer to steer")
     ap.add_argument("--neurons", default="all", help='"all", "random:128", "2742", "0-99", or "1,5,9-12"')
     ap.add_argument("--design", default="main", choices=sorted(DESIGNS))

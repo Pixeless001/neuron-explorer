@@ -24,7 +24,7 @@ PLAIN = ["I think the most important thing to remember is", "Today we are going 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--layers", default="0-31")
     ap.add_argument("--dose", type=float, default=0.8)
     ap.add_argument("--neurons-per-batch", type=int, default=96)

@@ -31,7 +31,7 @@ def common_prefix(a, b):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
     ap.add_argument("--stats", required=True)
     ap.add_argument("--neurons", default="2742,17,5000")
     ap.add_argument("--doses", default="10,-2")

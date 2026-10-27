@@ -17,6 +17,7 @@ scripts/mirror.log
 explorer/cache/agent/
 *.zip
 explorer/names.json
+explorer/cache*/names.json
 explorer/*.local.md
 
 # per-machine pod settings

@@ -21,7 +21,7 @@ from huggingface_hub import snapshot_download
 from safetensors import safe_open
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+ap.add_argument("--model", default=os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-0.8B"))
 ap.add_argument("--k", type=int, default=24)
 ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "connections.npz"))
 a = ap.parse_args()
