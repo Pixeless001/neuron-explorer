@@ -321,3 +321,44 @@ tr.con .logit .tok { font-size: 10.5px; }
 #net .lrow { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
 #net .lrow .sgn { flex: none; width: 1em; font-family: var(--mono); }
 #net .lrow .sgn.up { color: var(--up); } #net .lrow .sgn.down { color: var(--down); }
+
+/* token noise: junk tokens dimmed, grouped variants underlined (see tidy() in app.js) */
+.junk { opacity: .32; }
+.chip.grp, .tok.grp { box-shadow: inset 0 -1px 0 var(--dim); }
+#c-lens sup, #tip sup, .rows sup { font-size: 9px; color: var(--faint); margin-left: 1px; }
+.seg .seg-lab { padding: 3px 4px 3px 8px; color: var(--faint); font-size: 12px; align-self: center; }
+#tok-group.on { background: rgba(255,255,255,0.14); color: var(--ink); }
+
+/* left panel: headings that stand out, room between sections, chips that wrap inside the panel */
+#net .head { font-size: 12px; line-height: 1.4; }
+#net .wsum .lab { font: 600 12px var(--font); color: var(--ink); letter-spacing: .02em; margin-bottom: 7px; }
+#net .wsum + .wsum, #net .head + .wsum { border-top: 1px solid rgba(255,255,255,0.06); margin-top: 6px; padding-top: 12px; }
+#net .lrow .chips { flex: 1; min-width: 0; }
+.chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#lt-net, #lt-run .rows, .tab, #c-thread, #a-thread { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+#lt-net { scrollbar-gutter: stable; }
+.wsum .lab[title], .lab[title], #net .head[title] { cursor: help; }
+
+/* legend for the + / − lines and the yellow / pink dots */
+#legend { bottom: 12px; left: 404px; display: grid; grid-template-columns: auto auto; gap: 3px 10px; align-items: center; padding: 7px 8px 7px 12px;
+  font-size: 12px; color: var(--dim); white-space: nowrap; }
+#legend span { grid-column: 1; }
+#legend #legend-x { grid-column: 2; grid-row: 1; align-self: start; }
+body.list-hidden #legend { left: 56px; }
+#legend b { font: 600 12px var(--mono); } #legend b.up { color: var(--up); } #legend b.down { color: var(--down); }
+#legend .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+#legend .sw.up { background: #ffd133; } #legend .sw.down { background: #ff40d9; }
+#legend-x { color: var(--faint); font-size: 15px; line-height: 1; padding: 0 2px; }
+#legend-x:hover { color: var(--ink); }
+@media (max-width: 1100px) { #legend { display: none; } }
+
+/* chat runs: neuron and dose on top, three labelled columns */
+.turn { padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); }
+.turn:first-child { border-top: 0; padding-top: 0; }
+.turn .run-head { font-size: 11.5px; color: var(--dim); margin-bottom: 8px; }
+.turn .run-head .nm { color: var(--ink); font-family: var(--font); }
+.turn .col .lab { font: 600 11.5px var(--font); letter-spacing: .02em; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.turn .col .lab b { font: 500 11px var(--mono); }
+.turn .col.up .lab { color: var(--up); } .turn .col.down .lab { color: var(--down); } .turn .col.zero .lab { color: var(--dim); }
+.tok i { font-style: normal; color: var(--faint); margin-left: 4px; font-size: 10px; }
+.turn .col .lab { position: sticky; top: 0; z-index: 1; background: #0b0d0f; }

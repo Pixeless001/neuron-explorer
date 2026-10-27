@@ -11,6 +11,51 @@ addEventListener("unhandledrejection", e => { const el = document.querySelector(
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtDose = d => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
 
+// token lists everywhere: junk tokens (no letter, digit or emoji: lone �, punctuation, whitespace) are shown, dimmed or
+// hidden, and word variants can share one chip. Dim, not hide, by default: some neurons' whole lens is punctuation.
+const tokPrefs = { junk: "dim", group: false };
+try { Object.assign(tokPrefs, JSON.parse(localStorage.getItem("tokPrefs") || "{}")); } catch {}
+const isJunk = t => !/[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(t);
+const SUFFIXES = ["ings", "ing", "ions", "ion", "ives", "ive", "ers", "er", "ed", "es", "s", "e", "ly"];
+// ponytail: one English suffix stripped (create/created/creating/creation/creative -> creat); a real stemmer if it misgroups
+const stem = t => {
+  const w = t.trim().toLowerCase();
+  const s = /^[a-z]+$/.test(w) && SUFFIXES.find(x => w.endsWith(x) && w.length - x.length >= 3);
+  return s ? w.slice(0, -s.length) : w;
+};
+// tokens (strings or {tok, n}) in rank order -> [{tok, n, members, junk, q}] after both settings; q is what a click searches
+function tidy(list) {
+  let out = list.map(x => typeof x === "string" ? { tok: x } : x)
+    .map(x => ({ ...x, members: [x.tok], junk: isJunk(x.tok), q: x.tok.trim() || x.tok }));
+  if (tokPrefs.group) {
+    const by = new Map();
+    for (const x of out) {
+      const k = x.junk ? `\0${x.tok}` : stem(x.tok), g = by.get(k);
+      if (!g) by.set(k, { ...x, members: [...x.members] });
+      else { g.members.push(x.tok); if (g.n != null) g.n += x.n ?? 0; }
+    }
+    out = [...by.entries()].map(([k, g]) => g.members.length > 1 ? { ...g, q: k, n: g.n ?? g.members.length } : g);
+  }
+  return tokPrefs.junk === "hide" ? out.filter(x => !x.junk) : out;
+}
+const ONLY_JUNK = `<span class="faint" title="every token here is punctuation or whitespace; set junk to show or dim">only punctuation</span>`;
+// token chips: cls "chip" (clickable, searches the lens) or "tok"; tip(x) adds to each chip's tooltip
+function tokChips(list, { cls = "chip", max = Infinity, tip } = {}) {
+  const items = tidy(list).slice(0, max);
+  if (!items.length) return list.length ? ONLY_JUNK : "";
+  return items.map(x => {
+    const title = [x.members.length > 1 ? `${x.members.map(m => m.trim() || m).join(" · ")}` : "", tip?.(x) || ""].filter(Boolean).join("\n");
+    return `<span class="${cls}${x.junk ? " junk" : ""}${x.members.length > 1 ? " grp" : ""}" data-q="${esc(x.q)}"${title ? ` title="${esc(title)}"` : ""}>${esc(x.tok)}${x.n != null ? `<i>${x.n}</i>` : ""}</span>`;
+  }).join("");
+}
+// the same as running text (hover tips, chat lens lines, result rows)
+function tokText(list, max = Infinity, sep = "  ") {
+  const items = tidy(list).slice(0, max);
+  if (!items.length) return list.length ? ONLY_JUNK : "";
+  return items.map(x => { const t = esc(x.tok) + (x.members.length > 1 ? `<sup>×${x.members.length}</sup>` : "");
+    return x.junk ? `<span class="junk">${t}</span>` : t; }).join(sep);
+}
+
 let agentSelecting = false, agentMarked = false;  // Claude's selections and marks (see agentUi); declared early, openNeuron reads them on load
 const state = { layer: null, units: {}, unitMap: {}, focus: null, view: "map", chat: { mode: "add", dir: "writes", dose: { add: 0.8, mul: 2 } } };
 const ADD_STEPS = [...Array.from({ length: 30 }, (_, i) => +((i + 1) * 0.05).toFixed(2)), 1.75, 2, 2.5, 3, 4, 5];
@@ -37,7 +82,7 @@ const map = createMap($("#map"), $("#layer-labels"), arch, {
       const key = `h/${p.layer}/${p.head}`, head = `L${p.layer} h${p.head}`;
       const body = () => {
         const h = hoverCache.get(key);
-        const side = (sg, list) => list.slice(0, 3).map(c => `<div class="tl"><span class="sgn">${sg}</span><span class="faint">L${c.layer} N${c.n}</span>  ${esc(state.unitMap[c.layer]?.get(c.n)?.name || (c.lens || []).slice(0, 4).map(t => t.trim() || t).join("  "))}</div>`).join("");
+        const side = (sg, list) => list.slice(0, 3).map(c => `<div class="tl"><span class="sgn">${sg}</span><span class="faint">L${c.layer} N${c.n}</span>  ${state.unitMap[c.layer]?.get(c.n)?.name ? esc(state.unitMap[c.layer].get(c.n).name) : tokText(c.lens || [], 4)}</div>`).join("");
         return h ? side("←", h.reads) + side("→", h.writes) : "";
       };
       showTipHTML(x, y, head, body());
@@ -64,8 +109,8 @@ const map = createMap($("#map"), $("#layer-labels"), arch, {
       const h = hoverCache.get(key), rows = [];
       if (u?.name) rows.push(`<div class="tname">${esc(u.name)}</div>`);
       if (u) rows.push(`<div class="twords">${esc(u.words.join("  "))}</div>`);
-      if (h && h.steer) rows.push(`<div class="tl"><span class="sgn up">+</span>${esc(h.steer.join("  "))}</div><div class="tl"><span class="sgn down">−</span>${esc(h.steer_neg.join("  "))}</div>`);
-      if (h) rows.push(`<div class="tl faintline"><span class="sgn up">+</span>${esc(h.lens.join("  "))}</div><div class="tl faintline"><span class="sgn down">−</span>${esc(h.lens_neg.join("  "))}</div>`);
+      if (h && h.steer) rows.push(`<div class="tl"><span class="sgn up">+</span>${tokText(h.steer)}</div><div class="tl"><span class="sgn down">−</span>${tokText(h.steer_neg)}</div>`);
+      if (h) rows.push(`<div class="tl faintline"><span class="sgn up">+</span>${tokText(h.lens)}</div><div class="tl faintline"><span class="sgn down">−</span>${tokText(h.lens_neg)}</div>`);
       const nh = hoverCache.get(`nh/${key}`);
       if (nh) {
         const top = roleHeads(nh), into = top.filter(k => k.role === "o").slice(0, 3), from = top.filter(k => k.role !== "o").slice(0, 4);
@@ -398,32 +443,37 @@ $("#show-random").onchange = renderList;
 function webSummaryHTML() {
   const w = state.webSum, f = state.focus;
   if (!w || !f || f.kind !== "neuron" || w.layer !== f.layer || w.n !== f.n) return "";
-  const chips = list => list.length ? list.map(t => `<span class="chip" data-q="${esc(t.tok)}" title="${t.n} neurons · score ${t.w}">${esc(t.tok)}<i>${t.n}</i></span>`).join("")
+  const chips = list => list.length ? tokChips(list, { tip: t => `${t.n} neurons in the web carry it${t.w != null ? ` · score ${t.w}` : ""} · click to search the lens` })
     : `<span class="faint">nothing above chance</span>`;
-  return `<div class="head">web of L${w.layer} N${w.n} · ${w.links} links · ${w.src} lens, ranked by lift over each layer</div>
-    <div class="wsum"><div class="lab"><span class="sw up"></span>fed by · ${w.up.neurons} upstream neurons</div><div class="chips">${chips(w.up.fed_by)}</div></div>
-    <div class="wsum"><div class="lab"><span class="sw down"></span>held back by</div><div class="chips">${chips(w.up.held_by || [])}</div></div>
-    <div class="wsum"><div class="lab"><span class="sw up"></span>feeds → pushes toward · ${w.down.neurons} downstream neurons</div><div class="chips">${chips(w.down.toward)}</div></div>
-    <div class="wsum"><div class="lab"><span class="sw down"></span>feeds → pushes away from</div><div class="chips">${chips(w.down.away)}</div></div>`;
+  const sec = (sw, label, tip, list) => `<div class="wsum"><div class="lab" title="${esc(tip)}"><span class="sw ${sw}"></span>${label}</div><div class="chips">${chips(list)}</div></div>`;
+  return `<div class="head" title="The neuron's web: its strongest direct weight links, chained up and downstream. Tokens below pool the linked neurons' ${w.src} lenses, ranked by how much more often the web carries them than chance; the number on a chip is how many web neurons carry it.">web of L${w.layer} N${w.n} · ${w.links} links · ${w.src} lens, ranked by lift over each layer</div>`
+    + sec("up", `fed by · ${w.up.neurons} upstream neurons`, "Earlier neurons whose output excites this neuron (raises its activation), shown by what their lenses say.", w.up.fed_by)
+    + sec("down", "held back by", "Earlier neurons whose output inhibits this neuron (lowers its activation).", w.up.held_by || [])
+    + sec("up", `feeds → pushes toward · ${w.down.neurons} downstream neurons`, "When this neuron fires, the later neurons it drives push the model toward these tokens.", w.down.toward)
+    + sec("down", "feeds → pushes away from", "When this neuron fires, the later neurons it drives push the model away from these tokens.", w.down.away);
 }
 // the open neuron's heads by role: later heads whose query, key or value reads it, and heads whose output it reads
 function nheadsHTML() {
   const H = state.nheads, f = state.focus;
   if (!H?.roles || !f || f.kind !== "neuron" || H.layer !== f.layer || H.n !== f.n) return "";
   const name = x => `L${x.layer} h${x.heads.length > 1 ? `${x.heads[0]}–${x.heads.at(-1)}` : x.head}`;
-  const row = r => `<div class="lrow"><span class="sgn">${r}</span><div class="chips">${(H.roles[r] || []).filter(x => x.z >= 2).map(x =>
-    `<span class="chip" data-l="${x.layer}" data-h="${x.head}">${name(x)}<i>${x.z}</i></span>`).join("")}</div></div>`;
-  return `<div class="wsum"><div class="lab">heads</div>${["q", "k", "v", "o"].map(row).join("")}</div>`;
+  const ROLE_TIP = { q: "q: later heads whose query reads this neuron's output (it shapes what they look for from its token)",
+    k: "k: later heads whose key reads its output (it makes its token findable)",
+    v: "v: later heads whose value reads its output (they carry it on to other tokens)",
+    o: "o: heads at this layer or earlier whose output this neuron reads" };
+  const row = r => `<div class="lrow" title="${ROLE_TIP[r]}"><span class="sgn">${r}</span><div class="chips">${(H.roles[r] || []).filter(x => x.z >= 2).map(x =>
+    `<span class="chip" data-l="${x.layer}" data-h="${x.head}" title="${name(x)} · z ${x.z} against the other heads · click to open the head">${name(x)}<i>${x.z}</i></span>`).join("")}</div></div>`;
+  return `<div class="wsum"><div class="lab" title="Attention heads that meet this neuron, from weights alone. The number on a chip is a z-score against the other heads (higher = more of the neuron's direction in that head's space).">heads</div>${["q", "k", "v", "o"].map(row).join("")}</div>`;
 }
 // the open neuron's own lenses (what it writes), above its web (what its cone does)
 function lensHTML() {
   const L = state.lens, f = state.focus;
   if (!L || !f || f.kind !== "neuron" || L.layer !== f.layer || L.n !== f.n) return "";
-  const chips = ts => ts.slice(0, 12).map(t => `<span class="chip" data-q="${esc(t.trim() || t)}">${esc(t)}</span>`).join("");
-  const pair = (up, down) => `<div class="lrow"><span class="sgn up">+</span><div class="chips">${chips(up)}</div></div>
-    <div class="lrow"><span class="sgn down">−</span><div class="chips">${chips(down)}</div></div>`;
-  return (L.steer_up ? `<div class="wsum"><div class="lab">steer lens · KL ${L.kl_up} / ${L.kl_down}</div>${pair(L.steer_up, L.steer_down)}</div>` : "")
-    + `<div class="wsum"><div class="lab">logit lens</div>${pair(L.up, L.down)}</div>`;
+  const chips = ts => tokChips(ts, { max: 12, tip: () => "click to search the lens" });
+  const pair = (up, down) => `<div class="lrow" title="+ : the neuron pushed up (fires positive)"><span class="sgn up">+</span><div class="chips">${chips(up)}</div></div>
+    <div class="lrow" title="− : the neuron pushed down (fires negative)"><span class="sgn down">−</span><div class="chips">${chips(down)}</div></div>`;
+  return (L.steer_up ? `<div class="wsum"><div class="lab" title="Steer lens: the next tokens that gain the most probability when this neuron is pushed up (+) or down (−) by ${L.dose ?? 0.8}× the residual norm, through every later layer. KL (+ / −) is how much each push changes the prediction.">steer lens · KL ${L.kl_up} / ${L.kl_down}</div>${pair(L.steer_up, L.steer_down)}</div>` : "")
+    + `<div class="wsum"><div class="lab" title="Logit lens: the tokens this neuron's output direction points at directly through the unembedding, ignoring every later layer. + when it fires positive, − when negative.">logit lens</div>${pair(L.up, L.down)}</div>`;
 }
 // a head's strongest neurons in each role, as map links
 const ROLE_COL = { q: "#73ff8c", k: "#b399ff", v: "#66d9ff", o: "#66d9ff" };
@@ -436,7 +486,7 @@ function headHTML() {
   if (!H || !f || f.kind !== "head" || H.layer !== f.layer || H.head !== f.n) return "";
   const line = c => { const nm = state.unitMap[c.layer]?.get(c.n)?.name;
     return `<div class="nline" data-nl="${c.layer}" data-nn="${c.n}"><span class="id">L${c.layer} N${c.n}</span>`
-      + `<span class="w">${nm ? `<b>${esc(nm)}</b> ` : ""}${esc((c.lens || []).slice(0, 4).map(t => t.trim() || t).join("  "))}</span><span class="z">${c.z.toFixed(0)}</span></div>`; };
+      + `<span class="w">${nm ? `<b>${esc(nm)}</b> ` : ""}${tokText(c.lens || [], 4)}</span><span class="z" title="link strength, z-score">${c.z.toFixed(0)}</span></div>`; };
   const role = (r, list) => `<div class="wsum"><div class="lab"><span class="sw" style="background:${ROLE_COL[r]}"></span>${r}</div>${(list || []).slice(0, 10).map(line).join("")}</div>`;
   return role("q", H.q) + role("k", H.k) + role("v", H.reads) + role("o", H.writes);
 }
@@ -458,10 +508,27 @@ function renderResults(r, ol) {
   if (!r.ready) { ol.innerHTML = `<li class="head">${esc(state.statusText || "indexing lens")}</li>`; return; }
   const rows = (r.results || []).map(x => `<li class="res${x.swept === false ? " unswept" : ""}" data-l="${x.layer}" data-n="${x.n}" data-kind="neuron">
     <span class="n">L${x.layer} N${x.n}</span><span class="sg ${x.sign === "+" ? "up" : "down"}">${r.fires ? `${x.sign === "+" ? "" : "−"}${x.score.toFixed(1)}×` : `${x.sign === "+" ? "+" : "−"}${x.rank + 1}`}</span>
-    <span class="w">${r.fires ? `<span class="tk">"${esc(x.token)}"</span>` : ""}${x.name ? `<b>${esc(x.name)}</b> ` : ""}${esc(x.lens.join(" "))}</span></li>`).join("");
+    <span class="w">${r.fires ? `<span class="tk">"${esc(x.token)}"</span>` : ""}${x.name ? `<b>${esc(x.name)}</b> ` : ""}${tokText(x.lens, Infinity, " ")}</span></li>`).join("");
   const head = r.fires ? `${r.total ?? 0} neurons pass · score = activation ÷ its typical extreme` : `${r.total ?? 0} neurons · ${r.tokens ?? 0} tokens`;
   ol.innerHTML = `<li class="head">${head}</li>` + rows;
 }
+// junk / variant settings: redraw every token list in place
+function syncTokPrefs() {
+  document.querySelectorAll("#tok-junk button").forEach(b => b.classList.toggle("on", b.dataset.j === tokPrefs.junk));
+  $("#tok-group").classList.toggle("on", tokPrefs.group);
+}
+function setTokPrefs(p) {
+  Object.assign(tokPrefs, p);
+  try { localStorage.setItem("tokPrefs", JSON.stringify(tokPrefs)); } catch {}
+  syncTokPrefs(); renderList(); renderLensViews(); renderConnections();
+  if (fireResults) renderResults(fireResults, $("#run-rows"));
+}
+document.querySelectorAll("#tok-junk button").forEach(b => b.onclick = () => setTokPrefs({ junk: b.dataset.j }));
+$("#tok-group").onclick = () => setTokPrefs({ group: !tokPrefs.group });
+syncTokPrefs();
+try { if (localStorage.getItem("legendHidden")) $("#legend").remove(); } catch {}
+$("#legend-x")?.addEventListener("click", () => { $("#legend").remove(); try { localStorage.setItem("legendHidden", "1"); } catch {} });
+
 // a head chip marks its head on the map while hovered
 $("#net").addEventListener("mouseover", e => { const c = e.target.closest(".chip[data-h]"); map.hoverHead(c ? +c.dataset.l : null, c ? +c.dataset.h : null); });
 $("#net").addEventListener("mouseleave", () => map.hoverHead(null));
@@ -697,32 +764,36 @@ async function loadLive(layer, n) {
     map.setConnections(con); state.con = con; renderConnections();
   }, err => { if (isFocus(layer, n, "neuron") && $("#d-con")) $("#d-con").textContent = err.message; });
   if (!lens) return;
-  state.lens = { ...lens, layer, n }; renderList();
-  const tok = t => `<span class="tok">${esc(t)}</span>`;
-  const steer = lens.steer_up ? `<div class="lab">steer lens</div><div class="lens"><div class="up"><div class="lab">+ push · KL ${lens.kl_up}</div>${lens.steer_up.map(tok).join("")}</div><div class="down"><div class="lab">− push · KL ${lens.kl_down}</div>${lens.steer_down.map(tok).join("")}</div></div><div class="lab" style="margin-top:14px">logit lens</div>` : "";
-  if ($("#d-lens")) $("#d-lens").outerHTML = `${steer}<div class="lens"><div class="up"><div class="lab">+</div>${lens.up.map(tok).join("")}</div><div class="down"><div class="lab">−</div>${lens.down.map(tok).join("")}</div></div>`;
-  const words = state.unitMap[layer]?.get(n)?.words || [];
-  $("#c-lens").innerHTML = (words.length ? `<div class="words">${esc(words.join("  "))}</div>` : "") +
-    (lens.steer_up ? `<div><span class="sgn up">+</span>${esc(lens.steer_up.slice(0, 10).join("  "))}</div><div><span class="sgn down">−</span>${esc(lens.steer_down.slice(0, 10).join("  "))}</div>` : "") +
-    `<div class="faintline"><span class="sgn up">+</span>${esc(lens.up.slice(0, 10).join("  "))}</div><div class="faintline"><span class="sgn down">−</span>${esc(lens.down.slice(0, 10).join("  "))}</div>`;
+  state.lens = { ...lens, layer, n }; renderList(); renderLensViews();
+}
+// the open neuron's lenses in Details and above the chat (state.lens)
+function renderLensViews() {
+  const L = state.lens; if (!L || !isFocus(L.layer, L.n, "neuron")) return;
+  const tok = list => tokChips(list, { cls: "tok" });
+  const steer = L.steer_up ? `<div class="lab" title="the next tokens that gain the most probability when the neuron is pushed up (+) or down (−), through every later layer">steer lens</div><div class="lens"><div class="up"><div class="lab">+ push · KL ${L.kl_up}</div>${tok(L.steer_up)}</div><div class="down"><div class="lab">− push · KL ${L.kl_down}</div>${tok(L.steer_down)}</div></div><div class="lab" style="margin-top:14px">logit lens</div>` : "";
+  if ($("#d-lens")) $("#d-lens").outerHTML = `<div id="d-lens">${steer}<div class="lens" title="logit lens: the tokens the neuron's output direction points at directly, ignoring later layers"><div class="up"><div class="lab">+</div>${tok(L.up)}</div><div class="down"><div class="lab">−</div>${tok(L.down)}</div></div></div>`;
+  const words = state.unitMap[L.layer]?.get(L.n)?.words || [];
+  $("#c-lens").innerHTML = (words.length ? `<div class="words" title="words distinctive to this neuron's sweep rollouts">${esc(words.join("  "))}</div>` : "") +
+    (L.steer_up ? `<div title="steer lens: what pushing the neuron up (+) or down (−) makes the model say next"><span class="sgn up">+</span>${tokText(L.steer_up, 10)}</div><div title="steer lens, pushed down"><span class="sgn down">−</span>${tokText(L.steer_down, 10)}</div>` : "") +
+    `<div class="faintline" title="logit lens: tokens the neuron's output direction points at directly (+ positive, − negative)"><span class="sgn up">+</span>${tokText(L.up, 10)}</div><div class="faintline" title="logit lens, negative side"><span class="sgn down">−</span>${tokText(L.down, 10)}</div>`;
 }
 
 // sign = sign(g * u): the sign of the reading neuron's activation that the writing neuron's direction produces on its
 // own. Reversing the writer reverses g and u together, so the sign holds for either direction of the writer.
 function renderConnections() {
   const el = $("#d-con") || $("#d-con-wrap"); if (!el || !state.con) return;
-  const tok = t => `<span class="tok">${esc(t)}</span>`;
+  const tok = list => tokChips(list, { cls: "tok", max: 4 });
   const row = c => {
     const pole = c.sign > 0 ? 1 : -1, toks = (pole > 0 ? c.lens : c.lens_neg) || [];
     const logit = (pole > 0 ? c.logit : c.logit_neg) || [];
     const sweep = c.name || (c.words || []).join(" ");
-    return `<tr data-l="${c.layer}" data-n="${c.n}" class="con"><td class="pole ${pole > 0 ? "up" : "down"}">${pole > 0 ? "↑" : "↓"}</td>
-      <td>${toks.slice(0, 4).map(tok).join("")}${logit.length ? `<div class="logit">${logit.slice(0, 4).map(tok).join("")}</div>` : ""}${sweep ? `<div class="dim">${esc(sweep)}</div>` : ""}</td>
-      <td class="num dim">${c.z.toFixed(0)}</td><td class="mono faint">L${c.layer}·${c.n}</td></tr>`;
+    return `<tr data-l="${c.layer}" data-n="${c.n}" class="con"><td class="pole ${pole > 0 ? "up" : "down"}" title="${pole > 0 ? "↑ the link raises the reading neuron's activation" : "↓ the link lowers the reading neuron's activation"}">${pole > 0 ? "↑" : "↓"}</td>
+      <td>${tok(toks)}${logit.length ? `<div class="logit">${tok(logit)}</div>` : ""}${sweep ? `<div class="dim">${esc(sweep)}</div>` : ""}</td>
+      <td class="num dim" title="link strength: z-score of the direct weight path">${c.z.toFixed(0)}</td><td class="mono faint">L${c.layer}·${c.n}</td></tr>`;
   };
   el.outerHTML = `<div id="d-con-wrap">
-    <div class="lens"><div><div class="lab">writes into</div><table class="dtable">${state.con.down.slice(0, 14).map(row).join("")}</table></div>
-    <div><div class="lab">driven by</div><table class="dtable">${state.con.up.slice(0, 14).map(row).join("")}</table></div></div>
+    <div class="lens"><div><div class="lab" title="later neurons this neuron's output feeds directly (weights only)">writes into</div><table class="dtable">${state.con.down.slice(0, 14).map(row).join("")}</table></div>
+    <div><div class="lab" title="earlier neurons whose output feeds this neuron directly (weights only)">driven by</div><table class="dtable">${state.con.up.slice(0, 14).map(row).join("")}</table></div></div>
     ${headTablesHTML()}</div>`;
 }
 // the open neuron's heads in Details: later heads reading it (q / k / v) and heads it reads (o), each with what the
@@ -812,14 +883,18 @@ showDose();
 let running = null;
 state.thread = [];
 const ROWS = ["up", "zero", "down"];
+const COL_NAMES = ["steered +", "normal", "steered −"];
 function turnLabels(t) {
-  return t.mode === "mul" ? [`▲ ×${t.dose}`, "×1", `▼ ×−${t.dose}`] : [`▲ +${t.dose}`, "0", `▼ −${t.dose}`];
+  return t.mode === "mul" ? [`×${t.dose}`, "×1", `×−${t.dose}`] : [`+${t.dose}`, "0", `−${t.dose}`];
 }
+// each run: which neuron and dose, the shared prompt, then the three replies side by side (the label stays each
+// column's first child; streamed text is appended after it)
 function renderThread() {
   const el = $("#c-thread");
   el.innerHTML = state.thread.map((t, i) => `<div class="turn" data-i="${i}">
-    <div class="user">${esc(t.user)}<span class="recipe">${t.mode === "mul" ? "×" : "add"} ${t.dose}</span></div>
-    <div class="cols">${ROWS.map((c, r) => `<div class="col ${c}${t.live && !t.done[r] ? " live" : ""}"><span class="lab">${turnLabels(t)[r]}</span>${esc(t.replies[r])}</div>`).join("")}
+    <div class="run-head mono">${t.layer != null ? `L${t.layer} N${t.n}${t.name ? ` · <span class="nm">${esc(t.name)}</span>` : ""} · ` : ""}${t.mode === "mul" ? `× ${t.dose}` : `add ±${t.dose}`}</div>
+    <div class="user">${esc(t.user)}</div>
+    <div class="cols">${ROWS.map((c, r) => `<div class="col ${c}${t.live && !t.done[r] ? " live" : ""}"><span class="lab">${COL_NAMES[r]} <b>${turnLabels(t)[r]}</b></span>${esc(t.replies[r])}</div>`).join("")}
     ${t.error ? `<div class="err">${esc(t.error)}</div>` : ""}</div></div>`).join("");
   el.scrollTop = el.scrollHeight;
 }
@@ -834,7 +909,8 @@ $("#c-form").addEventListener("submit", async e => {
   if (state.chat.dir === "reads") return runReads(f, text);
   const dose = state.chat.mode === "mul" ? state.chat.dose.mul : state.chat.dose.add;
   const history = state.thread.filter(t => !t.error).map(t => ({ user: t.user, replies: t.replies }));
-  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], dose, mode: state.chat.mode, live: true };
+  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], dose, mode: state.chat.mode, live: true,
+    layer: f.layer, n: f.n, name: f.kind === "neuron" ? $("#f-name").value.trim() : "" };
   state.thread.push(turn); $("#c-input").value = ""; renderThread();
   const cols = [...$("#c-thread").lastElementChild.querySelectorAll(".col")];
   const ctl = new AbortController(), thread = state.thread;

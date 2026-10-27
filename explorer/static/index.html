@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Neuron Explorer</title>
-<link rel="stylesheet" href="style.css?v=66">
+<link rel="stylesheet" href="style.css?v=68">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%23151515%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%222.5%22 fill=%22%23ffd27a%22/%3E%3C/svg%3E">
 <script type="importmap">
 {"imports": {
@@ -20,11 +20,13 @@
     <button data-view="embed">embeddings</button>
   </nav>
   <select id="layer" aria-label="layer"></select>
-  <span class="seg" id="layout-mode" title="sheet layout"><button data-k="index">index</button><button data-k="writes" class="on">writes</button></span>
+  <span class="seg" id="layout-mode" title="sheet layout · index: neurons in index order · writes: neurons with similar output (down-projection) directions placed next to each other"><button data-k="index">index</button><button data-k="writes" class="on">writes</button></span>
   <span class="seg" id="web-mode" title="connection web of the focused neuron: upstream and downstream cones; yellow links push the reader up, magenta push it down"><button data-w="off">no web</button><button data-w="on" class="on">web</button></span><input id="web-z" value="5" inputmode="numeric" aria-label="web top links" title="web: the open neuron's top links each way">
   <input id="jump" placeholder="L22 N2742" aria-label="go to neuron" spellcheck="false">
-  <span class="seg" id="q-mode"><button data-q="lens" class="on">lens</button><button data-q="fires">fires</button></span>
+  <span class="seg" id="q-mode"><button data-q="lens" class="on" title="lens: find neurons whose steer or logit lens contains a token">lens</button><button data-q="fires" title="fires: run your text through the model and list the neurons that fire hardest, relative to their usual range">fires</button></span>
   <input id="lens-q" placeholder="search lens" aria-label="search" spellcheck="false" autocomplete="off">
+  <span class="seg" id="tok-junk" title="junk tokens (lone �, punctuation, whitespace) in every token list"><span class="seg-lab">junk</span><button data-j="show">show</button><button data-j="dim" class="on">dim</button><button data-j="hide">hide</button></span>
+  <span class="seg" id="tok-group-seg"><button id="tok-group" title="group word variants (create / created / creating / creation) into one chip with a combined count">group variants</button></span>
   <span id="status" class="mono"></span>
 </header>
 
@@ -33,6 +35,7 @@
     <canvas id="map"></canvas>
     <div id="layer-labels"></div>
     <button id="layer-back"></button>
+    <div id="legend" class="float" role="note"><span title="the open neuron pushed up (fires positive) or down (fires negative)"><b class="up">+</b> / <b class="down">−</b> neuron pushed up / down</span><span title="yellow dots and links: raises the reader's activation, or what the neuron's web pushes toward"><i class="sw up"></i>excites · pushes toward</span><span title="pink dots and links: lowers the reader's activation, or what the web pushes away from"><i class="sw down"></i>inhibits · pushes away from</span><button id="legend-x" aria-label="hide legend" title="hide legend">×</button></div>
   </section>
   <section id="embed-view" class="view">
     <canvas id="scatter"></canvas>
@@ -85,8 +88,8 @@
       <div id="c-reads"></div>
       <form id="c-form">
         <div id="chat-controls">
-          <span class="seg" id="c-mode"><button type="button" data-m="add" class="on">add</button><button type="button" data-m="mul">×</button></span>
-          <span class="seg" id="c-dir"><button type="button" data-d="writes" class="on">writes</button><button type="button" data-d="reads">reads you</button></span>
+          <span class="seg" id="c-mode"><button type="button" data-m="add" class="on" title="add: push the neuron by dose × the layer's median residual norm (+ in the first column, − in the last)">add</button><button type="button" data-m="mul" title="×: multiply the neuron's own activation by the dose (×−dose in the last column)">×</button></span>
+          <span class="seg" id="c-dir"><button type="button" data-d="writes" class="on" title="writes: steer the model with this neuron and compare replies">writes</button><button type="button" data-d="reads" title="reads you: show this neuron's activation on each token of your text">reads you</button></span>
           <span class="stepper"><button type="button" id="c-minus" aria-label="smaller">−</button><input id="c-dose" class="mono" inputmode="decimal" aria-label="dose" value="0.8"><button type="button" id="c-plus" aria-label="larger">+</button></span>
           <button type="button" id="c-clear" class="dim">clear</button>
         </div>
@@ -102,6 +105,6 @@
     </div>
   </aside>
 </main>
-<script type="module" src="app.js?v=124"></script>
+<script type="module" src="app.js?v=125"></script>
 </body>
 </html>
